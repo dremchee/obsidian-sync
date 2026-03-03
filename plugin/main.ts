@@ -1,10 +1,13 @@
-import { App, Menu, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, requestUrl, setIcon } from "obsidian";
+import { Notice, Plugin, TAbstractFile, requestUrl } from "obsidian";
 import { SyncEngine } from "./src/sync/engine";
-import type { SyncSettings } from "./src/settings";
+import type { StartupSyncMode, SyncSettings } from "./src/settings";
+import { SyncSettingsTab } from "./src/ui/sync-settings-tab";
+import { StatusBarController } from "./src/ui/status-controller";
 
 const DEFAULT_SETTINGS: SyncSettings = {
   syncEnabled: true,
   syncOnStartup: true,
+  startupMode: "smooth",
   serverUrl: "http://127.0.0.1:3243",
   apiKey: "",
   deviceId: "",
@@ -16,25 +19,29 @@ const DEFAULT_SETTINGS: SyncSettings = {
 export default class CustomSyncPlugin extends Plugin {
   settings: SyncSettings = DEFAULT_SETTINGS;
   engine: SyncEngine | null = null;
-  syncTimer: number | null = null;
+  syncTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   syncInProgress = false;
   pendingSync = false;
   lastSyncAt = 0;
   revokedNoticeShown = false;
   isDeviceRevoked = false;
-  settingTab: SyncSettingTab | null = null;
-  statusBarEl: HTMLElement | null = null;
+  settingTab: SyncSettingsTab | null = null;
+  statusBarController: StatusBarController | null = null;
   lastSyncError: string | null = null;
-  statusState: "ok" | "pending" | "syncing" | "error" | "revoked" | "disabled" = "ok";
   serverConnectionState: "unknown" | "ok" | "error" = "unknown";
   serverConnectionMessage = "Not checked yet";
+  startupSmoothActive = false;
+  startupWarmupCyclesLeft = 0;
 
   async onload() {
     await this.loadSettings();
     this.engine = new SyncEngine(this.app, this.settings);
-    this.statusBarEl = this.addStatusBarItem();
-    this.statusBarEl.addClass("custom-sync-statusbar");
-    this.registerDomEvent(this.statusBarEl, "click", (evt) => this.openStatusMenu(evt));
+    const statusBarEl = this.addStatusBarItem();
+    statusBarEl.addClass("custom-sync-statusbar");
+    this.statusBarController = new StatusBarController(statusBarEl);
+    this.registerDomEvent(statusBarEl, "click", (evt) =>
+      this.statusBarController?.openMenu(evt, this.lastSyncAt, () => this.openPluginSettings())
+    );
     this.updateStatusBar();
 
     this.registerEvent(this.app.vault.on("create", (file) => this.markDirtyAndSchedule(file)));
@@ -71,31 +78,32 @@ export default class CustomSyncPlugin extends Plugin {
       }
     });
 
-    this.settingTab = new SyncSettingTab(this.app, this);
+    this.settingTab = new SyncSettingsTab(this.app, this);
     this.addSettingTab(this.settingTab);
-    if (this.settings.syncOnStartup) {
-      this.pendingSync = true;
-      this.updateStatusBar();
-      this.scheduleSync(true);
-    }
+    this.startupSyncIfEnabled();
   }
 
   onunload() {
     if (this.syncTimer) {
-      window.clearTimeout(this.syncTimer);
+      globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as SyncSettings;
+    if (!loaded.startupMode) {
+      loaded.startupMode = loaded.syncOnStartup ? "smooth" : "off";
+    }
+    loaded.syncOnStartup = loaded.startupMode !== "off";
+    this.settings = loaded;
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
     this.engine = new SyncEngine(this.app, this.settings);
     if (this.syncTimer) {
-      window.clearTimeout(this.syncTimer);
+      globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
     this.pendingSync = true;
@@ -107,9 +115,49 @@ export default class CustomSyncPlugin extends Plugin {
     if (file?.path && this.engine?.shouldSuppressLocalEvent(file.path)) {
       return;
     }
+    if (file?.path) {
+      this.engine?.markDirty(file.path);
+    }
     this.pendingSync = true;
     this.updateStatusBar();
     this.scheduleSync();
+  }
+
+  private startupSyncIfEnabled() {
+    if (this.settings.startupMode === "off") {
+      return;
+    }
+
+    this.pendingSync = true;
+    this.startupSmoothActive = this.settings.startupMode === "smooth";
+    this.startupWarmupCyclesLeft = this.startupSmoothActive ? 3 : 0;
+    this.updateStatusBar();
+
+    const baseDelayMs = Math.max(10, this.settings.intervalSec) * 1000;
+    const jitterMs = Math.floor(Math.random() * (this.startupSmoothActive ? 10_000 : 3_000));
+    const delayMs = baseDelayMs + jitterMs;
+    this.syncTimer = globalThis.setTimeout(() => {
+      this.syncTimer = null;
+      if (this.startupSmoothActive) {
+        this.runSyncWhenIdle();
+        return;
+      }
+      void this.syncNow(false, false);
+    }, delayMs);
+  }
+
+  private runSyncWhenIdle() {
+    const run = () => {
+      void this.syncNow(false, false);
+    };
+    const host = globalThis as typeof globalThis & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+    };
+    if (typeof host.requestIdleCallback === "function") {
+      host.requestIdleCallback(run, { timeout: 2000 });
+      return;
+    }
+    globalThis.setTimeout(run, 0);
   }
 
   private scheduleSync(immediate = false) {
@@ -122,11 +170,40 @@ export default class CustomSyncPlugin extends Plugin {
     const elapsed = Date.now() - this.lastSyncAt;
     const delay = immediate ? 0 : Math.max(0, intervalMs - elapsed);
 
-    this.syncTimer = window.setTimeout(() => {
+    this.syncTimer = globalThis.setTimeout(() => {
       this.syncTimer = null;
+      if (this.startupSmoothActive) {
+        this.runSyncWhenIdle();
+        return;
+      }
       void this.syncNow();
     }, delay);
     this.updateStatusBar();
+  }
+
+  private getRunProfile(force: boolean) {
+    if (!this.startupSmoothActive || force) return undefined;
+    return {
+      maxFilesPerCycle: 8,
+      fallbackScanChunkSize: 4,
+      opBatchSize: 4,
+      yieldEvery: 2,
+      maxBlobUploadConcurrency: 1,
+      pullLimit: 100
+    };
+  }
+
+  private consumeStartupWarmupCycle() {
+    if (!this.startupSmoothActive) return;
+    this.startupWarmupCyclesLeft -= 1;
+    if (this.startupWarmupCyclesLeft <= 0) {
+      this.startupSmoothActive = false;
+    }
+  }
+
+  setStartupMode(mode: StartupSyncMode) {
+    this.settings.startupMode = mode;
+    this.settings.syncOnStartup = mode !== "off";
   }
 
   private async syncNow(showNotice = false, force = false) {
@@ -140,7 +217,7 @@ export default class CustomSyncPlugin extends Plugin {
     this.updateStatusBar();
 
     try {
-      await this.engine.runOnce({ forcePull: force });
+      await this.engine.runOnce({ forcePull: force, profile: this.getRunProfile(force) });
       this.lastSyncAt = Date.now();
       this.serverConnectionState = "ok";
       this.serverConnectionMessage = `Connected via sync at ${new Date(this.lastSyncAt).toLocaleTimeString()}`;
@@ -178,6 +255,7 @@ export default class CustomSyncPlugin extends Plugin {
         this.refreshSettingsUi();
       }
     } finally {
+      this.consumeStartupWarmupCycle();
       this.syncInProgress = false;
       this.updateStatusBar();
       if (this.pendingSync) {
@@ -231,81 +309,16 @@ export default class CustomSyncPlugin extends Plugin {
   }
 
   private updateStatusBar() {
-    if (!this.statusBarEl) return;
-
-    if (!this.settings.syncEnabled) {
-      this.statusState = "disabled";
-      this.setStatusBarText("Sync disabled");
-      return;
-    }
-
-    if (this.isDeviceRevoked) {
-      this.statusState = "revoked";
-      this.setStatusBarText("Sync revoked");
-      return;
-    }
-
-    if (this.syncInProgress) {
-      this.statusState = "syncing";
-      this.setStatusBarText("Syncing");
-      return;
-    }
-
-    if (this.pendingSync || this.syncTimer) {
-      this.statusState = "pending";
-      this.setStatusBarText("Pending");
-      return;
-    }
-
-    if (this.lastSyncError) {
-      this.statusState = "error";
-      this.setStatusBarText("Sync error");
-      return;
-    }
-
-    this.statusState = "ok";
-    this.setStatusBarText("Sync ok");
-  }
-
-  private formatLastSyncAt() {
-    if (!this.lastSyncAt) return "never";
-    return new Date(this.lastSyncAt).toLocaleString();
-  }
-
-  private setStatusBarText(text: string) {
-    if (!this.statusBarEl) return;
-    this.statusBarEl.empty();
-
-    const iconEl = this.statusBarEl.createSpan({ cls: "custom-sync-status-icon" });
-    const textEl = this.statusBarEl.createSpan({ cls: "custom-sync-status-text", text });
-    textEl.style.marginLeft = "6px";
-
-    const iconName =
-      this.statusState === "ok"
-        ? "check-circle"
-        : this.statusState === "pending"
-          ? "clock-3"
-          : this.statusState === "syncing"
-            ? "refresh-cw"
-            : this.statusState === "revoked"
-              ? "ban"
-              : this.statusState === "disabled"
-                ? "pause-circle"
-                : "alert-triangle";
-    setIcon(iconEl, iconName);
-
-    this.statusBarEl.title = `${text}\nLast sync: ${this.formatLastSyncAt()}`;
-  }
-
-  private openStatusMenu(evt: MouseEvent) {
-    const menu = new Menu();
-    menu.addItem((item) => item.setTitle(`Status: ${this.statusState}`).setDisabled(true));
-    menu.addItem((item) => item.setTitle(`Last sync: ${this.formatLastSyncAt()}`).setDisabled(true));
-    menu.addSeparator();
-    menu.addItem((item) =>
-      item.setTitle("Open Sync Settings").onClick(() => this.openPluginSettings())
+    this.statusBarController?.update(
+      {
+        syncEnabled: this.settings.syncEnabled,
+        isDeviceRevoked: this.isDeviceRevoked,
+        syncInProgress: this.syncInProgress,
+        hasPendingWork: Boolean(this.pendingSync || this.syncTimer),
+        hasError: Boolean(this.lastSyncError)
+      },
+      this.lastSyncAt
     );
-    menu.showAtMouseEvent(evt);
   }
 
   private openPluginSettings() {
@@ -354,187 +367,5 @@ export default class CustomSyncPlugin extends Plugin {
       this.refreshSettingsUi();
       new Notice(`Connection failed: ${String(err)}`);
     }
-  }
-}
-
-class SyncSettingTab extends PluginSettingTab {
-  plugin: CustomSyncPlugin;
-
-  constructor(app: App, plugin: CustomSyncPlugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-
-    new Setting(containerEl)
-      .setName("Enable sync")
-      .setDesc("Turn automatic sync on/off. Manual sync command still works.")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.syncEnabled)
-          .onChange(async (value) => {
-            this.plugin.settings.syncEnabled = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Sync on startup")
-      .setDesc("Run initial sync automatically when Obsidian starts.")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.syncOnStartup)
-          .onChange(async (value) => {
-            this.plugin.settings.syncOnStartup = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    const serverUrlSetting = new Setting(containerEl)
-      .setName("Server URL")
-      .setDesc("Base URL of the Nitro sync API")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.serverUrl)
-          .onChange(async (value) => {
-            this.plugin.settings.serverUrl = value.trim();
-            await this.plugin.saveSettings();
-          })
-      )
-      .addButton((button) =>
-        button.setButtonText("Test").onClick(async () => {
-          button.setDisabled(true);
-          try {
-            await this.plugin.testServerConnection();
-          } finally {
-            button.setDisabled(false);
-          }
-        })
-      );
-
-    const serverStatusText =
-      this.plugin.serverConnectionState === "ok"
-        ? `Connected: ${this.plugin.serverConnectionMessage}`
-        : this.plugin.serverConnectionState === "error"
-          ? `Connection failed: ${this.plugin.serverConnectionMessage}`
-          : this.plugin.serverConnectionMessage;
-    const serverStatusColor =
-      this.plugin.serverConnectionState === "ok"
-        ? "var(--color-green)"
-        : this.plugin.serverConnectionState === "error"
-          ? "var(--color-red)"
-          : "var(--text-muted)";
-
-    const serverUrlDesc = serverUrlSetting.settingEl.querySelector(".setting-item-description");
-    if (serverUrlDesc instanceof HTMLElement) {
-      const statusEl = serverUrlDesc.createDiv({ cls: "custom-sync-server-status" });
-      statusEl.textContent = serverStatusText;
-      statusEl.style.color = serverStatusColor;
-      statusEl.style.fontWeight = "600";
-      statusEl.style.marginTop = "4px";
-    }
-
-    new Setting(containerEl)
-      .setName("API key")
-      .setDesc("Assigned automatically on register")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.apiKey)
-          .setDisabled(true)
-      );
-
-    new Setting(containerEl)
-      .setName("Device ID")
-      .setDesc("Assigned automatically by server on register")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.deviceId)
-          .setDisabled(true)
-      );
-
-    new Setting(containerEl)
-      .setName("Vault name")
-      .setDesc("Vault name used for device registration")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.vaultName)
-          .onChange(async (value) => {
-            this.plugin.settings.vaultName = value.trim();
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Passphrase")
-      .setDesc("Passphrase used for client-side encryption")
-      .addText((text) => {
-        text.inputEl.type = "password";
-        return text
-          .setPlaceholder("Required for sync")
-          .setValue(this.plugin.settings.passphrase)
-          .onChange(async (value) => {
-            this.plugin.settings.passphrase = value;
-            await this.plugin.saveSettings();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Interval (sec)")
-      .setDesc("Throttle window for change-based sync")
-      .addText((text) =>
-        text
-          .setValue(String(this.plugin.settings.intervalSec))
-          .onChange(async (value) => {
-            const parsed = Number.parseInt(value, 10);
-            this.plugin.settings.intervalSec = Number.isFinite(parsed) ? parsed : 30;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Register device")
-      .setDesc(
-        this.plugin.isDeviceRevoked
-          ? "Device key is revoked. Click Register to re-register this device."
-          : "Requests API key/device ID from server and saves them."
-      )
-      .addButton((button) =>
-        button.setButtonText(this.plugin.isDeviceRevoked ? "Re-register" : "Register").onClick(async () => {
-          button.setDisabled(true);
-          try {
-            const reg = await this.plugin.engine?.registerDevice();
-            if (reg) {
-              this.plugin.settings.apiKey = reg.apiKey;
-              this.plugin.settings.deviceId = reg.deviceId;
-              await this.plugin.saveSettings();
-              this.plugin.isDeviceRevoked = false;
-              this.plugin.revokedNoticeShown = false;
-              new Notice("Device registered. API key saved in plugin settings.");
-              this.display();
-            }
-          } catch (err) {
-            new Notice(`Register failed: ${String(err)}`);
-          } finally {
-            button.setDisabled(false);
-          }
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Delete conflicts")
-      .setDesc("Delete files created as sync conflicts (*.conflict.*).")
-      .addButton((button) =>
-        button.setButtonText("Delete").onClick(async () => {
-          button.setDisabled(true);
-          try {
-            await this.plugin.deleteConflictFiles();
-          } finally {
-            button.setDisabled(false);
-          }
-        })
-      );
   }
 }
