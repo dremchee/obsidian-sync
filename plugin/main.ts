@@ -1,4 +1,4 @@
-import { App, Menu, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, setIcon } from "obsidian";
+import { App, Menu, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, requestUrl, setIcon } from "obsidian";
 import { SyncEngine } from "./src/sync/engine";
 import type { SyncSettings } from "./src/settings";
 
@@ -26,6 +26,8 @@ export default class CustomSyncPlugin extends Plugin {
   statusBarEl: HTMLElement | null = null;
   lastSyncError: string | null = null;
   statusState: "ok" | "pending" | "syncing" | "error" | "revoked" | "disabled" = "ok";
+  serverConnectionState: "unknown" | "ok" | "error" = "unknown";
+  serverConnectionMessage = "Not checked yet";
 
   async onload() {
     await this.loadSettings();
@@ -140,6 +142,8 @@ export default class CustomSyncPlugin extends Plugin {
     try {
       await this.engine.runOnce({ forcePull: force });
       this.lastSyncAt = Date.now();
+      this.serverConnectionState = "ok";
+      this.serverConnectionMessage = `Connected via sync at ${new Date(this.lastSyncAt).toLocaleTimeString()}`;
       this.revokedNoticeShown = false;
       this.isDeviceRevoked = false;
       this.lastSyncError = null;
@@ -150,6 +154,8 @@ export default class CustomSyncPlugin extends Plugin {
       if (this.isDeviceRevokedError(err)) {
         this.isDeviceRevoked = true;
         this.lastSyncError = "device revoked";
+        this.serverConnectionState = "error";
+        this.serverConnectionMessage = "Device key revoked";
         this.refreshSettingsUi();
         this.updateStatusBar();
         if (!this.revokedNoticeShown) {
@@ -159,11 +165,17 @@ export default class CustomSyncPlugin extends Plugin {
       } else if (showNotice) {
         const detail = this.toSyncErrorText(err);
         this.lastSyncError = detail;
+        this.serverConnectionState = "error";
+        this.serverConnectionMessage = detail;
         this.updateStatusBar();
+        this.refreshSettingsUi();
         new Notice(`Sync failed: ${detail}`);
       } else {
         this.lastSyncError = this.toSyncErrorText(err);
+        this.serverConnectionState = "error";
+        this.serverConnectionMessage = this.lastSyncError;
         this.updateStatusBar();
+        this.refreshSettingsUi();
       }
     } finally {
       this.syncInProgress = false;
@@ -306,6 +318,43 @@ export default class CustomSyncPlugin extends Plugin {
     appWithSettings.setting?.open?.();
     appWithSettings.setting?.openTabById?.(this.manifest.id);
   }
+
+  async testServerConnection() {
+    const base = this.settings.serverUrl.trim().replace(/\/+$/, "");
+    if (!base) {
+      this.serverConnectionState = "error";
+      this.serverConnectionMessage = "Server URL is empty";
+      this.refreshSettingsUi();
+      new Notice("Server URL is empty.");
+      return;
+    }
+
+    try {
+      const res = await requestUrl({
+        url: `${base}/healthz`,
+        method: "GET",
+        throw: false
+      });
+
+      if (res.status >= 400) {
+        this.serverConnectionState = "error";
+        this.serverConnectionMessage = `${res.status} ${res.text || ""}`.trim();
+        this.refreshSettingsUi();
+        new Notice(`Connection failed: ${res.status} ${res.text || ""}`.trim());
+        return;
+      }
+
+      this.serverConnectionState = "ok";
+      this.serverConnectionMessage = `Connected (HTTP ${res.status})`;
+      this.refreshSettingsUi();
+      new Notice(`Connection OK: ${res.status}`);
+    } catch (err) {
+      this.serverConnectionState = "error";
+      this.serverConnectionMessage = String(err);
+      this.refreshSettingsUi();
+      new Notice(`Connection failed: ${String(err)}`);
+    }
+  }
 }
 
 class SyncSettingTab extends PluginSettingTab {
@@ -344,7 +393,7 @@ class SyncSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    const serverUrlSetting = new Setting(containerEl)
       .setName("Server URL")
       .setDesc("Base URL of the Nitro sync API")
       .addText((text) =>
@@ -354,7 +403,39 @@ class SyncSettingTab extends PluginSettingTab {
             this.plugin.settings.serverUrl = value.trim();
             await this.plugin.saveSettings();
           })
+      )
+      .addButton((button) =>
+        button.setButtonText("Test").onClick(async () => {
+          button.setDisabled(true);
+          try {
+            await this.plugin.testServerConnection();
+          } finally {
+            button.setDisabled(false);
+          }
+        })
       );
+
+    const serverStatusText =
+      this.plugin.serverConnectionState === "ok"
+        ? `Connected: ${this.plugin.serverConnectionMessage}`
+        : this.plugin.serverConnectionState === "error"
+          ? `Connection failed: ${this.plugin.serverConnectionMessage}`
+          : this.plugin.serverConnectionMessage;
+    const serverStatusColor =
+      this.plugin.serverConnectionState === "ok"
+        ? "var(--color-green)"
+        : this.plugin.serverConnectionState === "error"
+          ? "var(--color-red)"
+          : "var(--text-muted)";
+
+    const serverUrlDesc = serverUrlSetting.settingEl.querySelector(".setting-item-description");
+    if (serverUrlDesc instanceof HTMLElement) {
+      const statusEl = serverUrlDesc.createDiv({ cls: "custom-sync-server-status" });
+      statusEl.textContent = serverStatusText;
+      statusEl.style.color = serverStatusColor;
+      statusEl.style.fontWeight = "600";
+      statusEl.style.marginTop = "4px";
+    }
 
     new Setting(containerEl)
       .setName("API key")
@@ -389,15 +470,16 @@ class SyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Passphrase")
       .setDesc("Passphrase used for client-side encryption")
-      .addText((text) =>
-        text
+      .addText((text) => {
+        text.inputEl.type = "password";
+        return text
           .setPlaceholder("Required for sync")
           .setValue(this.plugin.settings.passphrase)
           .onChange(async (value) => {
             this.plugin.settings.passphrase = value;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("Interval (sec)")
