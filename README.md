@@ -53,6 +53,8 @@ Copy files from `plugin/dist/` into your Obsidian vault plugin folder:
 - `POST /api/v1/sync/pull`
 - `PUT /api/v1/blob/:hash`
 - `GET /api/v1/blob/:hash`
+- `POST /api/v1/blobs/get`
+- `POST /api/v1/blobs/missing`
 - `GET /api/v1/file/versions?path=...`
 - `POST /api/v1/file/restore`
 - `POST /api/v1/admin/gc` (`x-admin-token` required)
@@ -61,5 +63,12 @@ Copy files from `plugin/dist/` into your Obsidian vault plugin folder:
 ## Notes
 
 - Server stores only encrypted payloads. Encryption is performed in the plugin.
-- Conflict strategy is `LWW + conflict copies`.
+- Conflict strategy is `Hard LWW` (deterministic winner by server timestamp and device tie-breaker).
 - This is a single-node v1 (no HA/failover).
+
+## Troubleshooting
+
+- `Sync failed: ... network error`: verify `Server URL`, that Nitro is running, and port `3243` is reachable.
+- Too many requests during initial sync: plugin now batches blob download/upload (`/blobs/get`, `/blobs/missing`).
+- Device suddenly unauthorized (`401`): API key was revoked; re-register device in plugin settings.
+- Investigate performance: enable `Debug perf logs` in plugin settings and inspect developer console.
