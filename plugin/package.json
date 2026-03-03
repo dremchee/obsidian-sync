@@ -1,0 +1,17 @@
+{
+  "name": "obsidian-sync-plugin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build && node scripts/copy-manifest.mjs"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0"
+  },
+  "devDependencies": {
+    "obsidian": "^1.8.10",
+    "typescript": "^5.9.2",
+    "vite": "^7.3.1"
+  }
+}
