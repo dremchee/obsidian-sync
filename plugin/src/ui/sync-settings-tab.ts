@@ -1,6 +1,6 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import type { SyncEngine } from "../sync/engine";
-import type { StartupSyncMode, SyncSettings } from "../settings";
+import type { PluginLanguage, StartupSyncMode, SyncSettings } from "../settings";
 
 export type ServerConnectionState = "unknown" | "ok" | "error";
 
@@ -15,12 +15,14 @@ export interface SyncSettingsTabContext {
   setStartupMode: (mode: StartupSyncMode) => void;
   testServerConnection: () => Promise<void>;
   deleteConflictFiles: () => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 type SyncSettingsTabPlugin = Plugin & SyncSettingsTabContext;
 
 export class SyncSettingsTab extends PluginSettingTab {
   plugin: SyncSettingsTabPlugin;
+  private passphraseVisible = false;
 
   constructor(app: App, plugin: SyncSettingsTabPlugin) {
     super(app, plugin);
@@ -30,10 +32,35 @@ export class SyncSettingsTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    const t = this.plugin.t;
+    const addSection = (title: string, desc?: string) => {
+      containerEl.createEl("h3", { text: title });
+      if (desc) {
+        containerEl.createEl("p", { text: desc, cls: "setting-item-description" });
+      }
+    };
+
+    addSection(t("settings.section_connection"));
 
     new Setting(containerEl)
-      .setName("Enable sync")
-      .setDesc("Turn automatic sync on/off. Manual sync command still works.")
+      .setName(t("settings.language.name"))
+      .setDesc(t("settings.language.desc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("auto", t("settings.language.auto"))
+          .addOption("en", t("settings.language.en"))
+          .addOption("ru", t("settings.language.ru"))
+          .setValue(this.plugin.settings.language)
+          .onChange(async (value) => {
+            this.plugin.settings.language = value as PluginLanguage;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("settings.enable_sync.name"))
+      .setDesc(t("settings.enable_sync.desc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.syncEnabled)
@@ -43,14 +70,16 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
+    addSection(t("settings.section_startup"));
+
     new Setting(containerEl)
-      .setName("Startup sync mode")
-      .setDesc("Off: no startup sync. Lazy: delayed normal sync. Smooth: delayed warm-up sync.")
+      .setName(t("settings.startup_mode.name"))
+      .setDesc(t("settings.startup_mode.desc"))
       .addDropdown((dropdown) =>
         dropdown
-          .addOption("off", "Off")
-          .addOption("lazy", "Lazy")
-          .addOption("smooth", "Smooth")
+          .addOption("off", t("settings.startup_mode.off"))
+          .addOption("lazy", t("settings.startup_mode.lazy"))
+          .addOption("smooth", t("settings.startup_mode.smooth"))
           .setValue(this.plugin.settings.startupMode)
           .onChange(async (value) => {
             this.plugin.setStartupMode(value as StartupSyncMode);
@@ -58,9 +87,11 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
+    addSection(t("settings.section_server"));
+
     const serverUrlSetting = new Setting(containerEl)
-      .setName("Server URL")
-      .setDesc("Base URL of the Nitro sync API")
+      .setName(t("settings.server_url.name"))
+      .setDesc(t("settings.server_url.desc"))
       .addText((text) =>
         text
           .setValue(this.plugin.settings.serverUrl)
@@ -70,7 +101,7 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       )
       .addButton((button) =>
-        button.setButtonText("Test").onClick(async () => {
+        button.setButtonText(t("settings.server_url.test")).onClick(async () => {
           button.setDisabled(true);
           try {
             await this.plugin.testServerConnection();
@@ -82,10 +113,10 @@ export class SyncSettingsTab extends PluginSettingTab {
 
     const serverStatusText =
       this.plugin.serverConnectionState === "ok"
-        ? `Connected: ${this.plugin.serverConnectionMessage}`
+        ? t("settings.server.connected", { value: this.plugin.serverConnectionMessage })
         : this.plugin.serverConnectionState === "error"
-          ? `Connection failed: ${this.plugin.serverConnectionMessage}`
-          : this.plugin.serverConnectionMessage;
+          ? t("settings.server.failed", { value: this.plugin.serverConnectionMessage })
+          : this.plugin.serverConnectionMessage || t("settings.server.not_checked");
     const serverStatusColor =
       this.plugin.serverConnectionState === "ok"
         ? "var(--color-green)"
@@ -102,9 +133,11 @@ export class SyncSettingsTab extends PluginSettingTab {
       statusEl.style.marginTop = "4px";
     }
 
+    addSection(t("settings.section_performance"));
+
     new Setting(containerEl)
-      .setName("API key")
-      .setDesc("Assigned automatically on register")
+      .setName(t("settings.api_key.name"))
+      .setDesc(t("settings.api_key.desc"))
       .addText((text) =>
         text
           .setValue(this.plugin.settings.apiKey)
@@ -112,43 +145,8 @@ export class SyncSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Device ID")
-      .setDesc("Assigned automatically by server on register")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.deviceId)
-          .setDisabled(true)
-      );
-
-    new Setting(containerEl)
-      .setName("Vault name")
-      .setDesc("Vault name used for device registration")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.vaultName)
-          .onChange(async (value) => {
-            this.plugin.settings.vaultName = value.trim();
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Passphrase")
-      .setDesc("Passphrase used for client-side encryption")
-      .addText((text) => {
-        text.inputEl.type = "password";
-        return text
-          .setPlaceholder("Required for sync")
-          .setValue(this.plugin.settings.passphrase)
-          .onChange(async (value) => {
-            this.plugin.settings.passphrase = value;
-            await this.plugin.saveSettings();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Interval (sec)")
-      .setDesc("Throttle window for change-based sync")
+      .setName(t("settings.interval_sec.name"))
+      .setDesc(t("settings.interval_sec.desc"))
       .addText((text) =>
         text
           .setValue(String(this.plugin.settings.intervalSec))
@@ -159,9 +157,11 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
+    addSection(t("settings.section_reliability"));
+
     new Setting(containerEl)
-      .setName("Pull batch size")
-      .setDesc("Max events per pull request.")
+      .setName(t("settings.pull_batch.name"))
+      .setDesc(t("settings.pull_batch.desc"))
       .addText((text) =>
         text
           .setValue(String(this.plugin.settings.pullBatchSize))
@@ -173,8 +173,8 @@ export class SyncSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Blob batch size")
-      .setDesc("Number of blob hashes in one batched download request.")
+      .setName(t("settings.blob_batch.name"))
+      .setDesc(t("settings.blob_batch.desc"))
       .addText((text) =>
         text
           .setValue(String(this.plugin.settings.blobBatchSize))
@@ -186,8 +186,8 @@ export class SyncSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Max concurrent uploads")
-      .setDesc("Parallel blob uploads.")
+      .setName(t("settings.concurrent_uploads.name"))
+      .setDesc(t("settings.concurrent_uploads.desc"))
       .addText((text) =>
         text
           .setValue(String(this.plugin.settings.maxConcurrentUploads))
@@ -199,11 +199,11 @@ export class SyncSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Retry base/max (ms)")
-      .setDesc("Exponential backoff window for transient network errors.")
+      .setName(t("settings.retry_window.name"))
+      .setDesc(t("settings.retry_window.desc"))
       .addText((text) =>
         text
-          .setPlaceholder("base")
+          .setPlaceholder(t("settings.retry_window.base"))
           .setValue(String(this.plugin.settings.retryBaseMs))
           .onChange(async (value) => {
             const parsed = Number.parseInt(value, 10);
@@ -213,7 +213,7 @@ export class SyncSettingsTab extends PluginSettingTab {
       )
       .addText((text) =>
         text
-          .setPlaceholder("max")
+          .setPlaceholder(t("settings.retry_window.max"))
           .setValue(String(this.plugin.settings.retryMaxMs))
           .onChange(async (value) => {
             const parsed = Number.parseInt(value, 10);
@@ -222,9 +222,11 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
+    addSection(t("settings.section_security"));
+
     new Setting(containerEl)
-      .setName("LWW policy")
-      .setDesc("Conflict policy is fixed to hard LWW in this build.")
+      .setName(t("settings.lww_policy.name"))
+      .setDesc(t("settings.lww_policy.desc"))
       .addText((text) =>
         text
           .setValue(this.plugin.settings.lwwPolicy)
@@ -232,8 +234,8 @@ export class SyncSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Debug perf logs")
-      .setDesc("Emit detailed sync stage timing logs to developer console.")
+      .setName(t("settings.debug_perf.name"))
+      .setDesc(t("settings.debug_perf.desc"))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.debugPerfLogs)
@@ -243,15 +245,68 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
+    let passphraseInput: HTMLInputElement | null = null;
     new Setting(containerEl)
-      .setName("Register device")
+      .setName(t("settings.passphrase.name"))
+      .setDesc(t("settings.passphrase.desc"))
+      .addText((text) => {
+        passphraseInput = text.inputEl;
+        text.inputEl.type = this.passphraseVisible ? "text" : "password";
+        return text
+          .setPlaceholder(t("settings.passphrase.placeholder"))
+          .setValue(this.plugin.settings.passphrase)
+          .onChange(async (value) => {
+            this.plugin.settings.passphrase = value;
+            await this.plugin.saveSettings();
+          });
+      })
+      .addExtraButton((button) => {
+        const applyIconAndTooltip = () => {
+          button.setIcon(this.passphraseVisible ? "eye-off" : "eye");
+          button.setTooltip(this.passphraseVisible ? t("settings.passphrase.hide") : t("settings.passphrase.show"));
+        };
+        applyIconAndTooltip();
+        button.onClick(() => {
+          this.passphraseVisible = !this.passphraseVisible;
+          if (passphraseInput) {
+            passphraseInput.type = this.passphraseVisible ? "text" : "password";
+          }
+          applyIconAndTooltip();
+        });
+      });
+
+    addSection(t("settings.section_device"));
+
+    new Setting(containerEl)
+      .setName(t("settings.device_id.name"))
+      .setDesc(t("settings.device_id.desc"))
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.deviceId)
+          .setDisabled(true)
+      );
+
+    new Setting(containerEl)
+      .setName(t("settings.vault_name.name"))
+      .setDesc(t("settings.vault_name.desc"))
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.vaultName)
+          .onChange(async (value) => {
+            this.plugin.settings.vaultName = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("settings.register_device.name"))
       .setDesc(
         this.plugin.isDeviceRevoked
-          ? "Device key is revoked. Click Register to re-register this device."
-          : "Requests API key/device ID from server and saves them."
+          ? t("settings.register_device.revoked_desc")
+          : t("settings.register_device.desc")
       )
       .addButton((button) =>
-        button.setButtonText(this.plugin.isDeviceRevoked ? "Re-register" : "Register").onClick(async () => {
+        button.setButtonText(this.plugin.isDeviceRevoked ? t("settings.register_device.button_reregister") : t("settings.register_device.button")).onClick(async () => {
           button.setDisabled(true);
           try {
             const reg = await this.plugin.engine?.registerDevice();
@@ -261,22 +316,24 @@ export class SyncSettingsTab extends PluginSettingTab {
               await this.plugin.saveSettings();
               this.plugin.isDeviceRevoked = false;
               this.plugin.revokedNoticeShown = false;
-              new Notice("Device registered. API key saved in plugin settings.");
+              new Notice(t("notices.device_registered"));
               this.display();
             }
           } catch (err) {
-            new Notice(`Register failed: ${String(err)}`);
+            new Notice(t("notices.register_failed", { error: String(err) }));
           } finally {
             button.setDisabled(false);
           }
         })
       );
 
+    addSection(t("settings.section_maintenance"));
+
     new Setting(containerEl)
-      .setName("Delete conflicts")
-      .setDesc("Delete conflict files from hidden sync folder and legacy *.conflict.* files.")
+      .setName(t("settings.delete_conflicts.name"))
+      .setDesc(t("settings.delete_conflicts.desc"))
       .addButton((button) =>
-        button.setButtonText("Delete").onClick(async () => {
+        button.setButtonText(t("settings.delete_conflicts.button")).onClick(async () => {
           button.setDisabled(true);
           try {
             await this.plugin.deleteConflictFiles();

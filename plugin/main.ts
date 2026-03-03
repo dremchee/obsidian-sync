@@ -3,11 +3,13 @@ import { SyncEngine, type EngineStateSnapshot } from "./src/sync/engine";
 import type { StartupSyncMode, SyncSettings } from "./src/settings";
 import { SyncSettingsTab } from "./src/ui/sync-settings-tab";
 import { StatusBarController } from "./src/ui/status-controller";
+import { createTranslator } from "./src/i18n";
 
 const DEFAULT_SETTINGS: SyncSettings = {
   syncEnabled: true,
   syncOnStartup: true,
   startupMode: "smooth",
+  language: "auto",
   serverUrl: "http://127.0.0.1:3243",
   apiKey: "",
   deviceId: "",
@@ -40,6 +42,9 @@ export default class CustomSyncPlugin extends Plugin {
   startupSmoothActive = false;
   startupWarmupCyclesLeft = 0;
   persistTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private readonly translator = createTranslator(() => this.settings.language);
+
+  t = (key: string, params?: Record<string, string | number>) => this.translator(key, params);
 
   async onload() {
     const persisted = await this.loadPersistedData();
@@ -61,7 +66,7 @@ export default class CustomSyncPlugin extends Plugin {
 
     this.addCommand({
       id: "custom-sync-now",
-      name: "Custom Sync: Sync now",
+      name: this.t("commands.sync_now"),
       callback: async () => {
         await this.syncNow(true, true);
       }
@@ -69,7 +74,7 @@ export default class CustomSyncPlugin extends Plugin {
 
     this.addCommand({
       id: "custom-sync-register-device",
-      name: "Custom Sync: Register device",
+      name: this.t("commands.register_device"),
       callback: async () => {
         try {
           const reg = await this.engine?.registerDevice();
@@ -80,10 +85,10 @@ export default class CustomSyncPlugin extends Plugin {
             this.revokedNoticeShown = false;
             this.isDeviceRevoked = false;
             this.refreshSettingsUi();
-            new Notice("Device registered. API key saved in plugin settings.");
+            new Notice(this.t("notices.device_registered"));
           }
         } catch (err) {
-          new Notice(`Register failed: ${String(err)}`);
+          new Notice(this.t("notices.register_failed", { error: String(err) }));
         }
       }
     });
@@ -265,24 +270,24 @@ export default class CustomSyncPlugin extends Plugin {
       await this.engine.runOnce({ forcePull: force, profile: this.getRunProfile(force) });
       this.lastSyncAt = Date.now();
       this.serverConnectionState = "ok";
-      this.serverConnectionMessage = `Connected via sync at ${new Date(this.lastSyncAt).toLocaleTimeString()}`;
+      this.serverConnectionMessage = new Date(this.lastSyncAt).toLocaleTimeString();
       this.revokedNoticeShown = false;
       this.isDeviceRevoked = false;
       this.lastSyncError = null;
       this.refreshSettingsUi();
       this.updateStatusBar();
-      if (showNotice) new Notice("Sync complete");
+      if (showNotice) new Notice(this.t("notices.sync_complete"));
     } catch (err) {
       if (this.isDeviceRevokedError(err)) {
         this.isDeviceRevoked = true;
         this.lastSyncError = "device revoked";
         this.serverConnectionState = "error";
-        this.serverConnectionMessage = "Device key revoked";
+        this.serverConnectionMessage = this.t("status.sync_revoked");
         this.refreshSettingsUi();
         this.updateStatusBar();
         if (!this.revokedNoticeShown) {
           this.revokedNoticeShown = true;
-          new Notice("Sync disabled: device API key is invalid/revoked. Re-register device in plugin settings.");
+          new Notice(this.t("notices.sync_disabled_revoked"));
         }
       } else if (showNotice) {
         const detail = this.toSyncErrorText(err);
@@ -291,7 +296,7 @@ export default class CustomSyncPlugin extends Plugin {
         this.serverConnectionMessage = detail;
         this.updateStatusBar();
         this.refreshSettingsUi();
-        new Notice(`Sync failed: ${detail}`);
+        new Notice(this.t("notices.sync_failed", { detail }));
       } else {
         this.lastSyncError = this.toSyncErrorText(err);
         this.serverConnectionState = "error";
@@ -318,7 +323,7 @@ export default class CustomSyncPlugin extends Plugin {
     });
 
     if (!files.length) {
-      new Notice("No conflict files found.");
+      new Notice(this.t("notices.no_conflicts_found"));
       return;
     }
 
@@ -334,10 +339,10 @@ export default class CustomSyncPlugin extends Plugin {
     }
 
     if (failed > 0) {
-      new Notice(`Conflict cleanup done: deleted ${deleted}, failed ${failed}.`);
+      new Notice(this.t("notices.conflict_cleanup_partial", { deleted, failed }));
       return;
     }
-    new Notice(`Conflict cleanup done: deleted ${deleted}.`);
+    new Notice(this.t("notices.conflict_cleanup_done", { deleted }));
   }
 
   private isDeviceRevokedError(err: unknown): boolean {
@@ -365,7 +370,8 @@ export default class CustomSyncPlugin extends Plugin {
         hasPendingWork: Boolean(this.pendingSync || this.syncTimer),
         hasError: Boolean(this.lastSyncError)
       },
-      this.lastSyncAt
+      this.lastSyncAt,
+      this.t
     );
   }
 
@@ -384,9 +390,9 @@ export default class CustomSyncPlugin extends Plugin {
     const base = this.settings.serverUrl.trim().replace(/\/+$/, "");
     if (!base) {
       this.serverConnectionState = "error";
-      this.serverConnectionMessage = "Server URL is empty";
+      this.serverConnectionMessage = this.t("notices.server_url_empty");
       this.refreshSettingsUi();
-      new Notice("Server URL is empty.");
+      new Notice(this.t("notices.server_url_empty"));
       return;
     }
 
@@ -401,19 +407,19 @@ export default class CustomSyncPlugin extends Plugin {
         this.serverConnectionState = "error";
         this.serverConnectionMessage = `${res.status} ${res.text || ""}`.trim();
         this.refreshSettingsUi();
-        new Notice(`Connection failed: ${res.status} ${res.text || ""}`.trim());
+        new Notice(this.t("notices.connection_failed", { error: `${res.status} ${res.text || ""}`.trim() }));
         return;
       }
 
       this.serverConnectionState = "ok";
       this.serverConnectionMessage = `Connected (HTTP ${res.status})`;
       this.refreshSettingsUi();
-      new Notice(`Connection OK: ${res.status}`);
+      new Notice(this.t("notices.connection_ok", { status: res.status }));
     } catch (err) {
       this.serverConnectionState = "error";
       this.serverConnectionMessage = String(err);
       this.refreshSettingsUi();
-      new Notice(`Connection failed: ${String(err)}`);
+      new Notice(this.t("notices.connection_failed", { error: String(err) }));
     }
   }
 }

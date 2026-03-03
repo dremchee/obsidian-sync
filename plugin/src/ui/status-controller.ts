@@ -13,6 +13,7 @@ export type StatusSnapshot = {
 export class StatusBarController {
   private readonly statusBarEl: HTMLElement;
   private state: SyncStatusState = "ok";
+  private t: (key: string, params?: Record<string, string | number>) => string = (k) => k;
   private lastRenderAt = 0;
   private readonly minRenderIntervalMs = 700;
   private pendingTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -23,45 +24,50 @@ export class StatusBarController {
     this.statusBarEl = statusBarEl;
   }
 
-  update(snapshot: StatusSnapshot, lastSyncAt: number) {
+  update(snapshot: StatusSnapshot, lastSyncAt: number, t: (key: string, params?: Record<string, string | number>) => string) {
+    this.t = t;
     const renderState = (state: SyncStatusState, text: string) => {
       this.state = state;
       this.renderThrottled(text, lastSyncAt);
     };
     if (!snapshot.syncEnabled) {
-      renderState("disabled", "Sync disabled");
+      renderState("disabled", t("status.sync_disabled"));
       return;
     }
 
     if (snapshot.isDeviceRevoked) {
-      renderState("revoked", "Sync revoked");
+      renderState("revoked", t("status.sync_revoked"));
       return;
     }
 
     if (snapshot.syncInProgress) {
-      renderState("syncing", "Syncing");
+      renderState("syncing", t("status.syncing"));
       return;
     }
 
     if (snapshot.hasPendingWork) {
-      renderState("pending", "Pending");
+      renderState("pending", t("status.pending"));
       return;
     }
 
     if (snapshot.hasError) {
-      renderState("error", "Sync error");
+      renderState("error", t("status.sync_error"));
       return;
     }
 
-    renderState("ok", "Sync ok");
+    renderState("ok", t("status.sync_ok"));
   }
 
-  openMenu(evt: MouseEvent, lastSyncAt: number, onOpenSettings: () => void) {
+  openMenu(
+    evt: MouseEvent,
+    lastSyncAt: number,
+    onOpenSettings: () => void
+  ) {
     const menu = new Menu();
-    menu.addItem((item) => item.setTitle(`Status: ${this.state}`).setDisabled(true));
-    menu.addItem((item) => item.setTitle(`Last sync: ${this.formatLastSyncAt(lastSyncAt)}`).setDisabled(true));
+    menu.addItem((item) => item.setTitle(this.t("status.menu_status", { value: this.state })).setDisabled(true));
+    menu.addItem((item) => item.setTitle(this.t("status.menu_last_sync", { value: this.formatLastSyncValue(lastSyncAt) })).setDisabled(true));
     menu.addSeparator();
-    menu.addItem((item) => item.setTitle("Open Sync Settings").onClick(onOpenSettings));
+    menu.addItem((item) => item.setTitle(this.t("status.menu_open_settings")).onClick(onOpenSettings));
     menu.showAtMouseEvent(evt);
   }
 
@@ -86,7 +92,7 @@ export class StatusBarController {
                 : "alert-triangle";
 
     setIcon(iconEl, iconName);
-    this.statusBarEl.title = `${text}\nLast sync: ${this.formatLastSyncAt(lastSyncAt)}`;
+    this.statusBarEl.title = `${text}\n${this.t("status.title_last_sync", { value: this.formatLastSyncValue(lastSyncAt) })}`;
   }
 
   private renderThrottled(text: string, lastSyncAt: number) {
@@ -115,8 +121,7 @@ export class StatusBarController {
     this.pendingText = null;
   }
 
-  private formatLastSyncAt(lastSyncAt: number) {
-    if (!lastSyncAt) return "never";
-    return new Date(lastSyncAt).toLocaleString();
+  private formatLastSyncValue(lastSyncAt: number) {
+    return lastSyncAt ? new Date(lastSyncAt).toLocaleString() : this.t("status.last_sync_never");
   }
 }
