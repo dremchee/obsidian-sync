@@ -142,8 +142,8 @@ export class SyncEngine {
     const base = Math.max(100, this.settings.retryBaseMs || 500);
     const max = Math.max(base, this.settings.retryMaxMs || 30_000);
     const exp = Math.min(max, base * (2 ** attempt));
-    const jitter = Math.floor(Math.random() * Math.min(1000, exp));
-    return Math.min(max, exp + jitter);
+    // Full jitter: random delay in [0, exp], better at desynchronizing retries.
+    return Math.floor(Math.random() * (exp + 1));
   }
 
   private async withRetry<T>(opName: string, fn: () => Promise<T>): Promise<T> {
