@@ -1,0 +1,26 @@
+{
+  "name": "obsidian-sync-server",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#app/*": "./server/*.ts"
+  },
+  "scripts": {
+    "dev": "nitro dev --port 3243",
+    "build": "nitro build",
+    "start": "node .output/server/index.mjs",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "drizzle-kit": "^0.31.9",
+    "drizzle-orm": "^0.45.1",
+    "nitropack": "^2.12.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "typescript": "^5.9.2"
+  }
+}

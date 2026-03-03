@@ -1,0 +1,12 @@
+{
+  "extends": "./.nitro/types/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "resolvePackageJsonImports": true,
+    "types": ["node"],
+    "skipLibCheck": true
+  }
+}
