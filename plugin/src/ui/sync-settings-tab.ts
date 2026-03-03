@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import type { SyncEngine } from "../sync/engine";
 import type { StartupSyncMode, SyncSettings } from "../settings";
 
@@ -17,11 +17,13 @@ export interface SyncSettingsTabContext {
   deleteConflictFiles: () => Promise<void>;
 }
 
-export class SyncSettingsTab extends PluginSettingTab {
-  plugin: SyncSettingsTabContext;
+type SyncSettingsTabPlugin = Plugin & SyncSettingsTabContext;
 
-  constructor(app: App, plugin: SyncSettingsTabContext) {
-    super(app, plugin as unknown as { manifest: { id: string } });
+export class SyncSettingsTab extends PluginSettingTab {
+  plugin: SyncSettingsTabPlugin;
+
+  constructor(app: App, plugin: SyncSettingsTabPlugin) {
+    super(app, plugin);
     this.plugin = plugin;
   }
 
@@ -188,7 +190,7 @@ export class SyncSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Delete conflicts")
-      .setDesc("Delete files created as sync conflicts (*.conflict.*).")
+      .setDesc("Delete conflict files from hidden sync folder and legacy *.conflict.* files.")
       .addButton((button) =>
         button.setButtonText("Delete").onClick(async () => {
           button.setDisabled(true);

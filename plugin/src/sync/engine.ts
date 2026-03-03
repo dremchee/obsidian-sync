@@ -12,6 +12,11 @@ type PullEvent = {
   revisionTs: number;
 };
 
+type BatchBlobResponse = {
+  items: Array<{ hash: string; dataBase64: string }>;
+  missing: string[];
+};
+
 type PullMetrics = {
   skipped: boolean;
   events: number;
@@ -51,6 +56,7 @@ async function sha256Hex(bytes: Uint8Array) {
 }
 
 export class SyncEngine {
+  private readonly conflictDir = ".obsidian/custom-self-hosted-sync/conflicts";
   private app: App;
   private settings: SyncSettings;
   private lastEventId = 0;
@@ -69,6 +75,7 @@ export class SyncEngine {
   private activeRunProfile: Required<RunProfile> = { ...this.defaultRunProfile };
   private readonly dirtyPaths = new Set<string>();
   private readonly localChangeGuardMs = 30_000;
+  private readonly blobBatchSize = 20;
   private scanCursor = 0;
 
   constructor(app: App, settings: SyncSettings) {
@@ -326,6 +333,12 @@ export class SyncEngine {
       body: { afterEventId: this.lastEventId, limit: this.activeRunProfile.pullLimit }
     });
     this.lastPullAt = Date.now();
+    const batchedBlobs = await this.downloadBlobsBatched(
+      data.events
+        .filter((evt) => !this.settings.deviceId || evt.deviceId !== this.settings.deviceId)
+        .map((evt) => evt.blobHash)
+        .filter((h): h is string => Boolean(h))
+    );
 
     let applied = 0;
     for (const evt of data.events) {
@@ -333,7 +346,7 @@ export class SyncEngine {
         continue;
       }
       try {
-        await this.applyRemoteEvent(evt);
+        await this.applyRemoteEvent(evt, batchedBlobs);
         applied += 1;
         if (applied % this.activeRunProfile.yieldEvery === 0) {
           await this.yieldToUi();
@@ -356,7 +369,7 @@ export class SyncEngine {
     };
   }
 
-  private async applyRemoteEvent(evt: PullEvent) {
+  private async applyRemoteEvent(evt: PullEvent, prefetchedBlobs?: Map<string, Uint8Array>) {
     if (evt.op === "delete") {
       this.markRemoteSuppressedPath(evt.path);
       const f = this.app.vault.getAbstractFileByPath(evt.path);
@@ -365,7 +378,7 @@ export class SyncEngine {
     }
 
     if (!evt.blobHash) return;
-    const raw = await this.downloadBlob(evt.blobHash);
+    const raw = prefetchedBlobs?.get(evt.blobHash) || await this.downloadBlob(evt.blobHash);
     let envelope: { salt: string; iv: string; ciphertext: string };
     try {
       envelope = JSON.parse(new TextDecoder().decode(raw)) as { salt: string; iv: string; ciphertext: string };
@@ -403,6 +416,27 @@ export class SyncEngine {
 
   private async downloadBlob(hash: string) {
     return this.requestBinary(`/api/v1/blob/${hash}`);
+  }
+
+  private async downloadBlobsBatched(hashes: string[]): Promise<Map<string, Uint8Array>> {
+    const out = new Map<string, Uint8Array>();
+    const uniq = Array.from(new Set(hashes));
+    if (!uniq.length) return out;
+
+    for (let i = 0; i < uniq.length; i += this.blobBatchSize) {
+      const chunk = uniq.slice(i, i + this.blobBatchSize);
+      const res = await this.requestJson<BatchBlobResponse>("/api/v1/blobs/get", {
+        method: "POST",
+        headers: this.authHeaders(),
+        body: { hashes: chunk }
+      });
+      for (const item of res.items || []) {
+        out.set(item.hash, this.fromB64(item.dataBase64));
+      }
+      await this.yieldToUi();
+    }
+
+    return out;
   }
 
   private async readAndEncryptFile(file: TFile) {
@@ -466,6 +500,13 @@ export class SyncEngine {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
   }
 
+  private fromB64(s: string): Uint8Array {
+    const binary = atob(s);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+    return out;
+  }
+
   private shouldKeepLocalVersion(path: string, localMtime: number, remoteRevisionTs: number): boolean {
     const activePath = this.app.workspace.getActiveFile()?.path;
     if (activePath && activePath === path) {
@@ -483,28 +524,33 @@ export class SyncEngine {
     remoteDeviceId: string,
     revisionTs: number
   ) {
-    await this.ensureFolder("_conflicts");
+    await this.ensureFolderRecursive(this.conflictDir);
     const safeBase = originalPath
       .replace(/[<>:\"|?*]/g, "_")
       .replace(/[\\/]/g, "__");
     const suffix = `remote.${remoteDeviceId || "unknown"}.${revisionTs}`;
-    let path = `_conflicts/${safeBase}.conflict.${suffix}.md`;
+    let path = `${this.conflictDir}/${safeBase}.conflict.${suffix}.md`;
     let i = 1;
     while (this.app.vault.getAbstractFileByPath(path)) {
-      path = `_conflicts/${safeBase}.conflict.${suffix}.${i}.md`;
+      path = `${this.conflictDir}/${safeBase}.conflict.${suffix}.${i}.md`;
       i += 1;
     }
     await this.app.vault.adapter.write(path, text);
   }
 
-  private async ensureFolder(path: string) {
-    if (this.app.vault.getAbstractFileByPath(path)) {
-      return;
-    }
-    try {
-      await this.app.vault.createFolder(path);
-    } catch {
-      // Folder might be created concurrently by another path.
+  private async ensureFolderRecursive(path: string) {
+    const parts = path.split("/").filter(Boolean);
+    let current = "";
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      if (this.app.vault.getAbstractFileByPath(current)) {
+        continue;
+      }
+      try {
+        await this.app.vault.createFolder(current);
+      } catch {
+        // Folder might be created concurrently by another path.
+      }
     }
   }
 

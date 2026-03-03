@@ -265,9 +265,11 @@ export default class CustomSyncPlugin extends Plugin {
   }
 
   async deleteConflictFiles() {
-    const files = this.app.vault
-      .getFiles()
-      .filter((f) => /\.conflict\.[^.]+\.\d+\.md$/i.test(f.path) || f.path.includes(".conflict."));
+    const hiddenPrefix = ".obsidian/custom-self-hosted-sync/conflicts/";
+    const files = this.app.vault.getFiles().filter((f) => {
+      if (f.path.startsWith(hiddenPrefix)) return true;
+      return /\.conflict\.[^.]+\.\d+\.md$/i.test(f.path) || f.path.includes(".conflict.");
+    });
 
     if (!files.length) {
       new Notice("No conflict files found.");
