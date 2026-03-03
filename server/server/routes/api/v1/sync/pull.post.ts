@@ -7,11 +7,13 @@ import { logError, logInfo } from "#app/utils/logger";
 
 export default defineEventHandler(async (event) => {
   const startedAt = Date.now();
+  const reqId = String((event.context as Record<string, unknown>).requestId || "");
   try {
     const requester = await requireDevice(event);
-    const body = await readBody<{ afterEventId?: number; limit?: number }>(event);
+    const body = await readBody<{ afterEventId?: number; limit?: number; includeDeleted?: boolean }>(event);
     const after = Math.max(0, body?.afterEventId || 0);
     const limit = Math.min(1000, Math.max(1, body?.limit || 200));
+    const includeDeleted = body?.includeDeleted !== false;
 
     const db = getOrmDb();
     const rows = await db
@@ -31,6 +33,7 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(events.vaultId, requester.vaultId), gt(events.id, after)))
       .orderBy(asc(events.id))
       .limit(limit);
+    const filteredRows = includeDeleted ? rows : rows.filter((r) => r.op !== "delete");
 
     const last = rows.length ? rows[rows.length - 1].eventId : after;
 
@@ -43,20 +46,22 @@ export default defineEventHandler(async (event) => {
       });
 
     logInfo("sync.pull.done", {
+      reqId,
       vaultId: requester.vaultId,
       deviceId: requester.deviceId,
       afterEventId: after,
-      returnedEvents: rows.length,
+      returnedEvents: filteredRows.length,
+      includeDeleted,
       nextAfterEventId: last,
       durationMs: Date.now() - startedAt
     });
 
     return {
-      events: rows,
+      events: filteredRows,
       nextAfterEventId: last
     };
   } catch (error) {
-    logError("sync.pull.failed", error, { durationMs: Date.now() - startedAt });
+    logError("sync.pull.failed", error, { reqId, durationMs: Date.now() - startedAt });
     throw error;
   }
 });

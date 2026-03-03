@@ -6,6 +6,7 @@ import { logError, logInfo, logWarn } from "#app/utils/logger";
 
 export default defineEventHandler(async (event) => {
   const startedAt = Date.now();
+  const reqId = String((event.context as Record<string, unknown>).requestId || "");
   try {
     const requester = await requireDevice(event);
     const body = await readBody<{ operations: PushOperation[] }>(event);
@@ -37,10 +38,11 @@ export default defineEventHandler(async (event) => {
         acc[r.status] += 1;
         return acc;
       },
-      { applied: 0, duplicate: 0, conflict: 0, ignored: 0 }
+      { applied: 0, duplicate: 0, ignored: 0 }
     );
 
     logInfo("sync.push.done", {
+      reqId,
       vaultId: requester.vaultId,
       deviceId: requester.deviceId,
       operationCount: ops.length,
@@ -50,7 +52,7 @@ export default defineEventHandler(async (event) => {
 
     return { results };
   } catch (error) {
-    logError("sync.push.failed", error, { durationMs: Date.now() - startedAt });
+    logError("sync.push.failed", error, { reqId, durationMs: Date.now() - startedAt });
     throw error;
   }
 });

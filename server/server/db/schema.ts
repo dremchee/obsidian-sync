@@ -65,5 +65,9 @@ export const syncOperations = sqliteTable("sync_operations", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   deviceId: text("device_id").notNull().references(() => devices.id),
   operationId: text("operation_id").notNull(),
-  createdAt: integer("created_at", { mode: "number" }).notNull()
+  createdAt: integer("created_at", { mode: "number" }).notNull(),
+  resultStatus: text("result_status"),
+  resultRevisionId: text("result_revision_id"),
+  resultHeadRevisionId: text("result_head_revision_id"),
+  resultConflictPath: text("result_conflict_path")
 });
