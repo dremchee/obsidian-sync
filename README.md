@@ -31,6 +31,8 @@ API base URL: `http://127.0.0.1:3243`
 - `API_KEY_PEPPER` server-side secret "pepper" used when hashing/verifying device API keys
 - `LOG_LEVEL` logging verbosity (`info`, `warn`, `error`, etc.)
 - `LOG_SENSITIVE_MODE` sensitive-field logging mode (`redact` or `drop`)
+- `LOG_RETENTION_DAYS` keep logs for this many days (default `1`)
+- `LOG_RETENTION_CRON` cron for retention task (default `0 3 * * *`, daily at 03:00)
 
 Security notes:
 - keep `ADMIN_TOKEN` and `API_KEY_PEPPER` only in `.env`/secret manager and never commit them
