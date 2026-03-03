@@ -1,0 +1,15 @@
+node_modules
+.nitro
+.output
+*.log
+.DS_Store
+data/app.db
+data/app.db-shm
+data/app.db-wal
+data/blobs/
+data/backups/
+data/logs/
+server/.env
+server/.env.local
+plugin/.obsidian/
+plugin/dist/
