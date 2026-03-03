@@ -29,7 +29,7 @@ export async function encryptBytes(passphrase: string, data: Uint8Array) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(passphrase, salt);
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, toArrayBuffer(data));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(data));
   return {
     v: 1,
     alg: "AES-256-GCM",
@@ -67,7 +67,7 @@ export async function decryptBytes(passphrase: string, payload: { salt: string; 
   }
 
   const key = await deriveKey(passphrase, salt);
-  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, toArrayBuffer(raw));
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(raw));
   return new Uint8Array(plaintext);
 }
 

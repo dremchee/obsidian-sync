@@ -1,4 +1,4 @@
-import { App, Menu, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile } from "obsidian";
+import { App, Menu, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, setIcon } from "obsidian";
 import { SyncEngine } from "./src/sync/engine";
 import type { SyncSettings } from "./src/settings";
 
@@ -262,21 +262,27 @@ export default class CustomSyncPlugin extends Plugin {
 
   private setStatusBarText(text: string) {
     if (!this.statusBarEl) return;
-    const icon =
+    this.statusBarEl.empty();
+
+    const iconEl = this.statusBarEl.createSpan({ cls: "custom-sync-status-icon" });
+    const textEl = this.statusBarEl.createSpan({ cls: "custom-sync-status-text", text });
+    textEl.style.marginLeft = "6px";
+
+    const iconName =
       this.statusState === "ok"
-        ? "✅"
+        ? "check-circle"
         : this.statusState === "pending"
-          ? "⏳"
+          ? "clock-3"
           : this.statusState === "syncing"
-            ? "🔄"
+            ? "refresh-cw"
             : this.statusState === "revoked"
-              ? "🚫"
+              ? "ban"
               : this.statusState === "disabled"
-                ? "⏸️"
-                : "⚠️";
-    const line = `${icon} ${text}`;
-    this.statusBarEl.setText(line);
-    this.statusBarEl.title = `${line}\nLast sync: ${this.formatLastSyncAt()}`;
+                ? "pause-circle"
+                : "alert-triangle";
+    setIcon(iconEl, iconName);
+
+    this.statusBarEl.title = `${text}\nLast sync: ${this.formatLastSyncAt()}`;
   }
 
   private openStatusMenu(evt: MouseEvent) {
@@ -285,12 +291,20 @@ export default class CustomSyncPlugin extends Plugin {
     menu.addItem((item) => item.setTitle(`Last sync: ${this.formatLastSyncAt()}`).setDisabled(true));
     menu.addSeparator();
     menu.addItem((item) =>
-      item.setTitle("Open Sync Settings").onClick(() => {
-        this.app.setting.open();
-        this.app.setting.openTabById?.(this.manifest.id);
-      })
+      item.setTitle("Open Sync Settings").onClick(() => this.openPluginSettings())
     );
     menu.showAtMouseEvent(evt);
+  }
+
+  private openPluginSettings() {
+    const appWithSettings = this.app as unknown as {
+      setting?: {
+        open?: () => void;
+        openTabById?: (id: string) => void;
+      };
+    };
+    appWithSettings.setting?.open?.();
+    appWithSettings.setting?.openTabById?.(this.manifest.id);
   }
 }
 
