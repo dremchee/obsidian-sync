@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile } from "obsidian";
+import { App, Menu, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile } from "obsidian";
 import { SyncEngine } from "./src/sync/engine";
 import type { SyncSettings } from "./src/settings";
 
@@ -25,11 +25,14 @@ export default class CustomSyncPlugin extends Plugin {
   settingTab: SyncSettingTab | null = null;
   statusBarEl: HTMLElement | null = null;
   lastSyncError: string | null = null;
+  statusState: "ok" | "pending" | "syncing" | "error" | "revoked" | "disabled" = "ok";
 
   async onload() {
     await this.loadSettings();
     this.engine = new SyncEngine(this.app, this.settings);
     this.statusBarEl = this.addStatusBarItem();
+    this.statusBarEl.addClass("custom-sync-statusbar");
+    this.registerDomEvent(this.statusBarEl, "click", (evt) => this.openStatusMenu(evt));
     this.updateStatusBar();
 
     this.registerEvent(this.app.vault.on("create", (file) => this.markDirtyAndSchedule(file)));
@@ -219,37 +222,75 @@ export default class CustomSyncPlugin extends Plugin {
     if (!this.statusBarEl) return;
 
     if (!this.settings.syncEnabled) {
-      this.statusBarEl.setText("Sync: disabled");
+      this.statusState = "disabled";
+      this.setStatusBarText("Sync disabled");
       return;
     }
 
     if (this.isDeviceRevoked) {
-      this.statusBarEl.setText("Sync: device revoked");
+      this.statusState = "revoked";
+      this.setStatusBarText("Sync revoked");
       return;
     }
 
     if (this.syncInProgress) {
-      this.statusBarEl.setText("Sync: syncing...");
+      this.statusState = "syncing";
+      this.setStatusBarText("Syncing");
       return;
     }
 
     if (this.pendingSync || this.syncTimer) {
-      this.statusBarEl.setText("Sync: pending");
-      return;
-    }
-
-    if (this.lastSyncAt > 0) {
-      const when = new Date(this.lastSyncAt).toLocaleTimeString();
-      this.statusBarEl.setText(`Sync: ${when}`);
+      this.statusState = "pending";
+      this.setStatusBarText("Pending");
       return;
     }
 
     if (this.lastSyncError) {
-      this.statusBarEl.setText(`Sync: ${this.lastSyncError}`);
+      this.statusState = "error";
+      this.setStatusBarText("Sync error");
       return;
     }
 
-    this.statusBarEl.setText("Sync: never");
+    this.statusState = "ok";
+    this.setStatusBarText("Sync ok");
+  }
+
+  private formatLastSyncAt() {
+    if (!this.lastSyncAt) return "never";
+    return new Date(this.lastSyncAt).toLocaleString();
+  }
+
+  private setStatusBarText(text: string) {
+    if (!this.statusBarEl) return;
+    const icon =
+      this.statusState === "ok"
+        ? "✅"
+        : this.statusState === "pending"
+          ? "⏳"
+          : this.statusState === "syncing"
+            ? "🔄"
+            : this.statusState === "revoked"
+              ? "🚫"
+              : this.statusState === "disabled"
+                ? "⏸️"
+                : "⚠️";
+    const line = `${icon} ${text}`;
+    this.statusBarEl.setText(line);
+    this.statusBarEl.title = `${line}\nLast sync: ${this.formatLastSyncAt()}`;
+  }
+
+  private openStatusMenu(evt: MouseEvent) {
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle(`Status: ${this.statusState}`).setDisabled(true));
+    menu.addItem((item) => item.setTitle(`Last sync: ${this.formatLastSyncAt()}`).setDisabled(true));
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item.setTitle("Open Sync Settings").onClick(() => {
+        this.app.setting.open();
+        this.app.setting.openTabById?.(this.manifest.id);
+      })
+    );
+    menu.showAtMouseEvent(evt);
   }
 }
 
