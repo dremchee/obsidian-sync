@@ -24,6 +24,19 @@ npm run dev:server
 
 API base URL: `http://127.0.0.1:3243`
 
+### Environment Variables (`server/.env`)
+
+- `DATA_DIR` path to runtime data (`app.db`, blobs, logs, backups)
+- `ADMIN_TOKEN` secret token for admin endpoints (currently `POST /api/v1/admin/gc`, header `x-admin-token`)
+- `API_KEY_PEPPER` server-side secret "pepper" used when hashing/verifying device API keys
+- `LOG_LEVEL` logging verbosity (`info`, `warn`, `error`, etc.)
+- `LOG_SENSITIVE_MODE` sensitive-field logging mode (`redact` or `drop`)
+
+Security notes:
+- keep `ADMIN_TOKEN` and `API_KEY_PEPPER` only in `.env`/secret manager and never commit them
+- use long random values
+- rotating `API_KEY_PEPPER` invalidates existing device API keys (devices must re-register)
+
 ### First device registration
 
 ```bash
@@ -59,6 +72,17 @@ Copy files from `plugin/dist/` into your Obsidian vault plugin folder:
 - `POST /api/v1/file/restore`
 - `POST /api/v1/admin/gc` (`x-admin-token` required)
 - `GET /healthz`
+
+## Ops Scripts
+
+Run orphan blob GC:
+
+```bash
+ADMIN_TOKEN='<your-admin-token>' DRY_RUN=true ./ops/gc.sh
+```
+
+- `DRY_RUN=true` only reports what would be deleted
+- `DRY_RUN=false` actually deletes orphan blobs
 
 ## Notes
 
