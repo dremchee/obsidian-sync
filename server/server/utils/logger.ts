@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { useRuntimeConfig } from "nitropack/runtime";
 import { resolveDataPaths } from "#app/utils/paths";
+import { runLogRetention } from "#app/utils/log-retention";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 type SensitiveMode = "redact" | "omit";
@@ -117,6 +118,14 @@ function writeToLogFile(line: string) {
     fs.appendFileSync(getLogFilePath(), `${line}\n`, "utf8");
   } catch {
     // Keep request path resilient even if file logging is not writable.
+  }
+}
+
+export function cleanupLogsNow() {
+  try {
+    return runLogRetention(getLogFilePath());
+  } catch {
+    return undefined;
   }
 }
 
