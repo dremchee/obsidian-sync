@@ -10,4 +10,11 @@ export interface SyncSettings {
   vaultName: string;
   passphrase: string;
   intervalSec: number;
+  maxConcurrentUploads: number;
+  pullBatchSize: number;
+  blobBatchSize: number;
+  retryBaseMs: number;
+  retryMaxMs: number;
+  lwwPolicy: "hard";
+  debugPerfLogs: boolean;
 }

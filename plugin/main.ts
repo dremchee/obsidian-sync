@@ -1,5 +1,5 @@
 import { Notice, Plugin, TAbstractFile, requestUrl } from "obsidian";
-import { SyncEngine } from "./src/sync/engine";
+import { SyncEngine, type EngineStateSnapshot } from "./src/sync/engine";
 import type { StartupSyncMode, SyncSettings } from "./src/settings";
 import { SyncSettingsTab } from "./src/ui/sync-settings-tab";
 import { StatusBarController } from "./src/ui/status-controller";
@@ -13,7 +13,14 @@ const DEFAULT_SETTINGS: SyncSettings = {
   deviceId: "",
   vaultName: "default",
   passphrase: "",
-  intervalSec: 30
+  intervalSec: 30,
+  maxConcurrentUploads: 2,
+  pullBatchSize: 100,
+  blobBatchSize: 20,
+  retryBaseMs: 500,
+  retryMaxMs: 30_000,
+  lwwPolicy: "hard",
+  debugPerfLogs: false
 };
 
 export default class CustomSyncPlugin extends Plugin {
@@ -32,10 +39,13 @@ export default class CustomSyncPlugin extends Plugin {
   serverConnectionMessage = "Not checked yet";
   startupSmoothActive = false;
   startupWarmupCyclesLeft = 0;
+  persistTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
   async onload() {
-    await this.loadSettings();
+    const persisted = await this.loadPersistedData();
+    await this.loadSettings(persisted);
     this.engine = new SyncEngine(this.app, this.settings);
+    this.engine.applyStateSnapshot(persisted.syncState);
     const statusBarEl = this.addStatusBarItem();
     statusBarEl.addClass("custom-sync-statusbar");
     this.statusBarController = new StatusBarController(statusBarEl);
@@ -88,20 +98,39 @@ export default class CustomSyncPlugin extends Plugin {
       globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
+    if (this.persistTimer) {
+      globalThis.clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    void this.persistPluginData();
   }
 
-  async loadSettings() {
-    const loaded = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as SyncSettings;
+  private async loadPersistedData(): Promise<{ settings?: Partial<SyncSettings>; syncState?: EngineStateSnapshot } > {
+    const raw = await this.loadData();
+    if (raw && typeof raw === "object" && "settings" in (raw as Record<string, unknown>)) {
+      const data = raw as { settings?: Partial<SyncSettings>; syncState?: EngineStateSnapshot };
+      return data;
+    }
+    return { settings: raw as Partial<SyncSettings> };
+  }
+
+  async loadSettings(persisted?: { settings?: Partial<SyncSettings> }) {
+    const loaded = Object.assign({}, DEFAULT_SETTINGS, persisted?.settings || {}) as SyncSettings;
     if (!loaded.startupMode) {
       loaded.startupMode = loaded.syncOnStartup ? "smooth" : "off";
     }
     loaded.syncOnStartup = loaded.startupMode !== "off";
+    loaded.lwwPolicy = "hard";
     this.settings = loaded;
   }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    await this.persistPluginData();
+    const prevState = this.engine?.getStateSnapshot();
     this.engine = new SyncEngine(this.app, this.settings);
+    if (prevState) {
+      this.engine.applyStateSnapshot(prevState);
+    }
     if (this.syncTimer) {
       globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
@@ -109,6 +138,21 @@ export default class CustomSyncPlugin extends Plugin {
     this.pendingSync = true;
     this.updateStatusBar();
     this.scheduleSync();
+  }
+
+  private schedulePersist() {
+    if (this.persistTimer) return;
+    this.persistTimer = globalThis.setTimeout(() => {
+      this.persistTimer = null;
+      void this.persistPluginData();
+    }, 1000);
+  }
+
+  private async persistPluginData() {
+    await this.saveData({
+      settings: this.settings,
+      syncState: this.engine?.getStateSnapshot()
+    });
   }
 
   private markDirtyAndSchedule(file?: TAbstractFile) {
@@ -121,6 +165,7 @@ export default class CustomSyncPlugin extends Plugin {
     this.pendingSync = true;
     this.updateStatusBar();
     this.scheduleSync();
+    this.schedulePersist();
   }
 
   private startupSyncIfEnabled() {
@@ -258,6 +303,7 @@ export default class CustomSyncPlugin extends Plugin {
       this.consumeStartupWarmupCycle();
       this.syncInProgress = false;
       this.updateStatusBar();
+      this.schedulePersist();
       if (this.pendingSync) {
         this.scheduleSync();
       }

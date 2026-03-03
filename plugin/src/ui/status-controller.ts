@@ -13,44 +13,47 @@ export type StatusSnapshot = {
 export class StatusBarController {
   private readonly statusBarEl: HTMLElement;
   private state: SyncStatusState = "ok";
+  private lastRenderAt = 0;
+  private readonly minRenderIntervalMs = 700;
+  private pendingTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  private pendingText: string | null = null;
+  private pendingLastSyncAt = 0;
 
   constructor(statusBarEl: HTMLElement) {
     this.statusBarEl = statusBarEl;
   }
 
   update(snapshot: StatusSnapshot, lastSyncAt: number) {
+    const renderState = (state: SyncStatusState, text: string) => {
+      this.state = state;
+      this.renderThrottled(text, lastSyncAt);
+    };
     if (!snapshot.syncEnabled) {
-      this.state = "disabled";
-      this.render("Sync disabled", lastSyncAt);
+      renderState("disabled", "Sync disabled");
       return;
     }
 
     if (snapshot.isDeviceRevoked) {
-      this.state = "revoked";
-      this.render("Sync revoked", lastSyncAt);
+      renderState("revoked", "Sync revoked");
       return;
     }
 
     if (snapshot.syncInProgress) {
-      this.state = "syncing";
-      this.render("Syncing", lastSyncAt);
+      renderState("syncing", "Syncing");
       return;
     }
 
     if (snapshot.hasPendingWork) {
-      this.state = "pending";
-      this.render("Pending", lastSyncAt);
+      renderState("pending", "Pending");
       return;
     }
 
     if (snapshot.hasError) {
-      this.state = "error";
-      this.render("Sync error", lastSyncAt);
+      renderState("error", "Sync error");
       return;
     }
 
-    this.state = "ok";
-    this.render("Sync ok", lastSyncAt);
+    renderState("ok", "Sync ok");
   }
 
   openMenu(evt: MouseEvent, lastSyncAt: number, onOpenSettings: () => void) {
@@ -84,6 +87,32 @@ export class StatusBarController {
 
     setIcon(iconEl, iconName);
     this.statusBarEl.title = `${text}\nLast sync: ${this.formatLastSyncAt(lastSyncAt)}`;
+  }
+
+  private renderThrottled(text: string, lastSyncAt: number) {
+    const now = Date.now();
+    const elapsed = now - this.lastRenderAt;
+    if (elapsed >= this.minRenderIntervalMs) {
+      this.flushPending();
+      this.render(text, lastSyncAt);
+      this.lastRenderAt = now;
+      return;
+    }
+
+    this.pendingText = text;
+    this.pendingLastSyncAt = lastSyncAt;
+    if (this.pendingTimer) return;
+    this.pendingTimer = globalThis.setTimeout(() => {
+      this.pendingTimer = null;
+      this.flushPending();
+    }, this.minRenderIntervalMs - elapsed);
+  }
+
+  private flushPending() {
+    if (!this.pendingText) return;
+    this.render(this.pendingText, this.pendingLastSyncAt);
+    this.lastRenderAt = Date.now();
+    this.pendingText = null;
   }
 
   private formatLastSyncAt(lastSyncAt: number) {

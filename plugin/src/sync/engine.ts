@@ -4,6 +4,7 @@ import { decryptBytes, encryptBytes, utf8Decode, utf8Encode } from "./crypto";
 
 type PullEvent = {
   eventId: number;
+  revisionId: string;
   deviceId: string;
   path: string;
   op: "upsert" | "delete" | "rename";
@@ -15,6 +16,17 @@ type PullEvent = {
 type BatchBlobResponse = {
   items: Array<{ hash: string; dataBase64: string }>;
   missing: string[];
+};
+
+type MissingBlobResponse = {
+  missing: string[];
+};
+
+type PushResult = {
+  operationId: string;
+  status: "applied" | "duplicate" | "ignored";
+  revisionId?: string;
+  headRevisionId?: string;
 };
 
 type PullMetrics = {
@@ -45,6 +57,13 @@ type RunProfile = {
   pullLimit?: number;
 };
 
+export type EngineStateSnapshot = {
+  lastEventId: number;
+  dirtyPaths: string[];
+  uploadedBlobHashes: string[];
+  headRevisionByPath: Record<string, string>;
+};
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
@@ -56,10 +75,10 @@ async function sha256Hex(bytes: Uint8Array) {
 }
 
 export class SyncEngine {
-  private readonly conflictDir = ".obsidian/custom-self-hosted-sync/conflicts";
   private app: App;
   private settings: SyncSettings;
   private lastEventId = 0;
+  private readonly headRevisionByPath = new Map<string, string>();
   private pushedMtime = new Map<string, number>();
   private uploadedBlobHashes = new Set<string>();
   private remoteWriteSuppressUntil = new Map<string, number>();
@@ -74,8 +93,6 @@ export class SyncEngine {
   };
   private activeRunProfile: Required<RunProfile> = { ...this.defaultRunProfile };
   private readonly dirtyPaths = new Set<string>();
-  private readonly localChangeGuardMs = 30_000;
-  private readonly blobBatchSize = 20;
   private scanCursor = 0;
 
   constructor(app: App, settings: SyncSettings) {
@@ -105,59 +122,108 @@ export class SyncEngine {
     throw new Error(`${operation} failed: ${status} ${text}`);
   }
 
+  private parseStatusCode(err: unknown): number | null {
+    const msg = err instanceof Error ? err.message : String(err);
+    const m = msg.match(/\bfailed:\s*(\d{3})\b/i);
+    return m ? Number.parseInt(m[1], 10) : null;
+  }
+
+  private isRetryableError(err: unknown): boolean {
+    if (err instanceof Error && /DEVICE_REVOKED/i.test(err.message)) return false;
+    const status = this.parseStatusCode(err);
+    if (status !== null) {
+      return status === 408 || status === 425 || status === 429 || status >= 500;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return /network error|failed to fetch|timeout|econnreset|enotfound|econnrefused/i.test(msg);
+  }
+
+  private retryDelayMs(attempt: number): number {
+    const base = Math.max(100, this.settings.retryBaseMs || 500);
+    const max = Math.max(base, this.settings.retryMaxMs || 30_000);
+    const exp = Math.min(max, base * (2 ** attempt));
+    const jitter = Math.floor(Math.random() * Math.min(1000, exp));
+    return Math.min(max, exp + jitter);
+  }
+
+  private async withRetry<T>(opName: string, fn: () => Promise<T>): Promise<T> {
+    const maxAttempts = 4;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        if (!this.isRetryableError(err) || attempt === maxAttempts - 1) {
+          throw err;
+        }
+        const delayMs = this.retryDelayMs(attempt);
+        this.debugPerf(`retry op=${opName} attempt=${attempt + 1} delayMs=${delayMs}`);
+        await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(`${opName} failed`);
+  }
+
   private async requestJson<T>(
     path: string,
     init: { method?: string; headers?: Record<string, string>; body?: unknown }
   ): Promise<T> {
-    try {
-      const res = await requestUrl({
-        url: this.endpoint(path),
-        method: init.method || "GET",
-        headers: init.headers,
-        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-        throw: false
-      });
-      if (res.status >= 400) {
-        this.classifyHttpError(res.status, res.text, `${init.method || "GET"} ${path}`);
+    return this.withRetry(`${init.method || "GET"} ${path}`, async () => {
+      try {
+        const res = await requestUrl({
+          url: this.endpoint(path),
+          method: init.method || "GET",
+          headers: init.headers,
+          body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+          throw: false
+        });
+        if (res.status >= 400) {
+          this.classifyHttpError(res.status, res.text, `${init.method || "GET"} ${path}`);
+        }
+        return res.json as T;
+      } catch (err) {
+        throw this.parseNetworkError(err, `${init.method || "GET"} ${path}`);
       }
-      return res.json as T;
-    } catch (err) {
-      throw this.parseNetworkError(err, `${init.method || "GET"} ${path}`);
-    }
+    });
   }
 
   private async requestBinary(path: string): Promise<Uint8Array> {
-    try {
-      const res: RequestUrlResponse = await requestUrl({
-        url: this.endpoint(path),
-        method: "GET",
-        headers: { authorization: `Bearer ${this.settings.apiKey}` },
-        throw: false
-      });
-      if (res.status >= 400) {
-        this.classifyHttpError(res.status, res.text, `GET ${path}`);
+    return this.withRetry(`GET ${path}`, async () => {
+      try {
+        const res: RequestUrlResponse = await requestUrl({
+          url: this.endpoint(path),
+          method: "GET",
+          headers: { authorization: `Bearer ${this.settings.apiKey}` },
+          throw: false
+        });
+        if (res.status >= 400) {
+          this.classifyHttpError(res.status, res.text, `GET ${path}`);
+        }
+        return new Uint8Array(res.arrayBuffer);
+      } catch (err) {
+        throw this.parseNetworkError(err, `GET ${path}`);
       }
-      return new Uint8Array(res.arrayBuffer);
-    } catch (err) {
-      throw this.parseNetworkError(err, `GET ${path}`);
-    }
+    });
   }
 
   private async uploadBinary(path: string, bytes: Uint8Array): Promise<void> {
-    try {
-      const res = await requestUrl({
-        url: this.endpoint(path),
-        method: "PUT",
-        headers: { authorization: `Bearer ${this.settings.apiKey}` },
-        body: toArrayBuffer(bytes),
-        throw: false
-      });
-      if (res.status >= 400) {
-        this.classifyHttpError(res.status, res.text, `PUT ${path}`);
+    await this.withRetry(`PUT ${path}`, async () => {
+      try {
+        const res = await requestUrl({
+          url: this.endpoint(path),
+          method: "PUT",
+          headers: { authorization: `Bearer ${this.settings.apiKey}` },
+          body: toArrayBuffer(bytes),
+          throw: false
+        });
+        if (res.status >= 400) {
+          this.classifyHttpError(res.status, res.text, `PUT ${path}`);
+        }
+      } catch (err) {
+        throw this.parseNetworkError(err, `PUT ${path}`);
       }
-    } catch (err) {
-      throw this.parseNetworkError(err, `PUT ${path}`);
-    }
+    });
   }
 
   async registerDevice() {
@@ -199,6 +265,40 @@ export class SyncEngine {
   markDirty(path: string) {
     if (!path) return;
     this.dirtyPaths.add(path);
+  }
+
+  applyStateSnapshot(snapshot: Partial<EngineStateSnapshot> | null | undefined) {
+    if (!snapshot || typeof snapshot !== "object") return;
+    if (Number.isFinite(snapshot.lastEventId)) {
+      this.lastEventId = Math.max(0, Number(snapshot.lastEventId));
+    }
+    if (Array.isArray(snapshot.dirtyPaths)) {
+      this.dirtyPaths.clear();
+      for (const p of snapshot.dirtyPaths) {
+        if (typeof p === "string" && p) this.dirtyPaths.add(p);
+      }
+    }
+    if (Array.isArray(snapshot.uploadedBlobHashes)) {
+      this.uploadedBlobHashes.clear();
+      for (const h of snapshot.uploadedBlobHashes) {
+        if (typeof h === "string" && /^[a-f0-9]{64}$/i.test(h)) this.uploadedBlobHashes.add(h.toLowerCase());
+      }
+    }
+    if (snapshot.headRevisionByPath && typeof snapshot.headRevisionByPath === "object") {
+      this.headRevisionByPath.clear();
+      for (const [k, v] of Object.entries(snapshot.headRevisionByPath)) {
+        if (typeof v === "string" && v) this.headRevisionByPath.set(k, v);
+      }
+    }
+  }
+
+  getStateSnapshot(): EngineStateSnapshot {
+    return {
+      lastEventId: this.lastEventId,
+      dirtyPaths: Array.from(this.dirtyPaths),
+      uploadedBlobHashes: Array.from(this.uploadedBlobHashes),
+      headRevisionByPath: Object.fromEntries(this.headRevisionByPath.entries())
+    };
   }
 
   private authHeaders() {
@@ -263,10 +363,12 @@ export class SyncEngine {
       };
     }
 
-    const uploads = prepared
+    const uploadCandidates = prepared
       .filter(({ payload }) => !this.uploadedBlobHashes.has(payload.hash))
       .map(({ payload }) => payload);
-    await this.runWithConcurrency(uploads, this.activeRunProfile.maxBlobUploadConcurrency, async (payload, idx) => {
+    const uploads = await this.filterMissingBlobs(uploadCandidates);
+    const uploadConcurrency = Math.max(1, this.settings.maxConcurrentUploads || this.activeRunProfile.maxBlobUploadConcurrency);
+    await this.runWithConcurrency(uploads, uploadConcurrency, async (payload, idx) => {
       const uploadStartedAt = performance.now();
       await this.uploadBlob(payload.hash, payload.bytes);
       uploadMs += performance.now() - uploadStartedAt;
@@ -282,13 +384,14 @@ export class SyncEngine {
       path: file.path,
       blobHash: payload.hash,
       size: payload.bytes.length,
-      clientTs: file.stat.mtime
+      clientTs: file.stat.mtime,
+      baseRevisionId: this.headRevisionByPath.get(file.path)
     }));
 
     for (let i = 0; i < operations.length; i += this.activeRunProfile.opBatchSize) {
       const chunk = operations.slice(i, i + this.activeRunProfile.opBatchSize);
       const pushStartedAt = performance.now();
-      await this.requestJson<{ results: unknown[] }>("/api/v1/sync/push", {
+      const res = await this.requestJson<{ results: PushResult[] }>("/api/v1/sync/push", {
         method: "POST",
         headers: this.authHeaders(),
         body: { operations: chunk }
@@ -297,6 +400,14 @@ export class SyncEngine {
       batches += 1;
       for (const op of chunk) {
         this.pushedMtime.set(op.path, op.clientTs);
+      }
+      for (const r of res.results || []) {
+        const op = chunk.find((c) => c.operationId === r.operationId);
+        if (!op) continue;
+        const head = r.headRevisionId || r.revisionId;
+        if (head) {
+          this.headRevisionByPath.set(op.path, head);
+        }
       }
       await this.yieldToUi();
     }
@@ -330,9 +441,18 @@ export class SyncEngine {
     const data = await this.requestJson<{ events: PullEvent[]; nextAfterEventId: number }>("/api/v1/sync/pull", {
       method: "POST",
       headers: this.authHeaders(),
-      body: { afterEventId: this.lastEventId, limit: this.activeRunProfile.pullLimit }
+      body: {
+        afterEventId: this.lastEventId,
+        limit: Math.max(1, Math.min(1000, this.settings.pullBatchSize || this.activeRunProfile.pullLimit)),
+        includeDeleted: true
+      }
     });
     this.lastPullAt = Date.now();
+    for (const evt of data.events) {
+      if (evt.revisionId) {
+        this.headRevisionByPath.set(evt.path, evt.revisionId);
+      }
+    }
     const batchedBlobs = await this.downloadBlobsBatched(
       data.events
         .filter((evt) => !this.settings.deviceId || evt.deviceId !== this.settings.deviceId)
@@ -395,11 +515,7 @@ export class SyncEngine {
         this.pushedMtime.set(existing.path, existing.stat.mtime);
         return;
       }
-
-      if (this.shouldKeepLocalVersion(existing.path, existing.stat.mtime, evt.revisionTs)) {
-        await this.writeRemoteConflictCopy(evt.path, text, evt.deviceId, evt.revisionTs);
-        return;
-      }
+      this.debugPerf(`lww overwrite path=${evt.path} remoteTs=${evt.revisionTs} localMtime=${existing.stat.mtime}`);
     }
     this.markRemoteSuppressedPath(evt.path);
     await this.app.vault.adapter.write(evt.path, text);
@@ -414,6 +530,27 @@ export class SyncEngine {
     await this.uploadBinary(`/api/v1/blob/${hash}`, bytes);
   }
 
+  private async filterMissingBlobs(payloads: Array<{ hash: string; bytes: Uint8Array }>) {
+    if (!payloads.length) return payloads;
+    const uniqHashes = Array.from(new Set(payloads.map((p) => p.hash)));
+    try {
+      const res = await this.requestJson<MissingBlobResponse>("/api/v1/blobs/missing", {
+        method: "POST",
+        headers: this.authHeaders(),
+        body: { hashes: uniqHashes }
+      });
+      const missingSet = new Set((res.missing || []).map((h) => String(h).toLowerCase()));
+      return payloads.filter((p) => missingSet.has(p.hash.toLowerCase()));
+    } catch (err) {
+      const status = this.parseStatusCode(err);
+      // Backward compatibility: old server without missing endpoint.
+      if (status === 404) {
+        return payloads;
+      }
+      throw err;
+    }
+  }
+
   private async downloadBlob(hash: string) {
     return this.requestBinary(`/api/v1/blob/${hash}`);
   }
@@ -423,8 +560,9 @@ export class SyncEngine {
     const uniq = Array.from(new Set(hashes));
     if (!uniq.length) return out;
 
-    for (let i = 0; i < uniq.length; i += this.blobBatchSize) {
-      const chunk = uniq.slice(i, i + this.blobBatchSize);
+    const batchSize = Math.max(1, Math.min(100, this.settings.blobBatchSize || 20));
+    for (let i = 0; i < uniq.length; i += batchSize) {
+      const chunk = uniq.slice(i, i + batchSize);
       const res = await this.requestJson<BatchBlobResponse>("/api/v1/blobs/get", {
         method: "POST",
         headers: this.authHeaders(),
@@ -507,54 +645,8 @@ export class SyncEngine {
     return out;
   }
 
-  private shouldKeepLocalVersion(path: string, localMtime: number, remoteRevisionTs: number): boolean {
-    const activePath = this.app.workspace.getActiveFile()?.path;
-    if (activePath && activePath === path) {
-      return true;
-    }
-
-    const localIsRecent = Date.now() - localMtime <= this.localChangeGuardMs;
-    const localIsNewer = localMtime > remoteRevisionTs;
-    return localIsRecent || localIsNewer;
-  }
-
-  private async writeRemoteConflictCopy(
-    originalPath: string,
-    text: string,
-    remoteDeviceId: string,
-    revisionTs: number
-  ) {
-    await this.ensureFolderRecursive(this.conflictDir);
-    const safeBase = originalPath
-      .replace(/[<>:\"|?*]/g, "_")
-      .replace(/[\\/]/g, "__");
-    const suffix = `remote.${remoteDeviceId || "unknown"}.${revisionTs}`;
-    let path = `${this.conflictDir}/${safeBase}.conflict.${suffix}.md`;
-    let i = 1;
-    while (this.app.vault.getAbstractFileByPath(path)) {
-      path = `${this.conflictDir}/${safeBase}.conflict.${suffix}.${i}.md`;
-      i += 1;
-    }
-    await this.app.vault.adapter.write(path, text);
-  }
-
-  private async ensureFolderRecursive(path: string) {
-    const parts = path.split("/").filter(Boolean);
-    let current = "";
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      if (this.app.vault.getAbstractFileByPath(current)) {
-        continue;
-      }
-      try {
-        await this.app.vault.createFolder(current);
-      } catch {
-        // Folder might be created concurrently by another path.
-      }
-    }
-  }
-
   private debugPerf(message: string) {
+    if (!this.settings.debugPerfLogs) return;
     console.debug(`[custom-sync][perf] ${message}`);
   }
 

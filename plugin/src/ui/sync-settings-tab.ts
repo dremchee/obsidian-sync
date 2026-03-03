@@ -160,6 +160,90 @@ export class SyncSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Pull batch size")
+      .setDesc("Max events per pull request.")
+      .addText((text) =>
+        text
+          .setValue(String(this.plugin.settings.pullBatchSize))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            this.plugin.settings.pullBatchSize = Number.isFinite(parsed) ? Math.max(10, Math.min(1000, parsed)) : 100;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Blob batch size")
+      .setDesc("Number of blob hashes in one batched download request.")
+      .addText((text) =>
+        text
+          .setValue(String(this.plugin.settings.blobBatchSize))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            this.plugin.settings.blobBatchSize = Number.isFinite(parsed) ? Math.max(1, Math.min(100, parsed)) : 20;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Max concurrent uploads")
+      .setDesc("Parallel blob uploads.")
+      .addText((text) =>
+        text
+          .setValue(String(this.plugin.settings.maxConcurrentUploads))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            this.plugin.settings.maxConcurrentUploads = Number.isFinite(parsed) ? Math.max(1, Math.min(8, parsed)) : 2;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Retry base/max (ms)")
+      .setDesc("Exponential backoff window for transient network errors.")
+      .addText((text) =>
+        text
+          .setPlaceholder("base")
+          .setValue(String(this.plugin.settings.retryBaseMs))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            this.plugin.settings.retryBaseMs = Number.isFinite(parsed) ? Math.max(100, parsed) : 500;
+            await this.plugin.saveSettings();
+          })
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("max")
+          .setValue(String(this.plugin.settings.retryMaxMs))
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            this.plugin.settings.retryMaxMs = Number.isFinite(parsed) ? Math.max(this.plugin.settings.retryBaseMs, parsed) : 30_000;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("LWW policy")
+      .setDesc("Conflict policy is fixed to hard LWW in this build.")
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.lwwPolicy)
+          .setDisabled(true)
+      );
+
+    new Setting(containerEl)
+      .setName("Debug perf logs")
+      .setDesc("Emit detailed sync stage timing logs to developer console.")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.debugPerfLogs)
+          .onChange(async (value) => {
+            this.plugin.settings.debugPerfLogs = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("Register device")
       .setDesc(
         this.plugin.isDeviceRevoked
