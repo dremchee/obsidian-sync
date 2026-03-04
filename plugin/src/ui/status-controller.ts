@@ -75,8 +75,6 @@ export class StatusBarController {
     this.statusBarEl.empty();
 
     const iconEl = this.statusBarEl.createSpan({ cls: "custom-sync-status-icon" });
-    const textEl = this.statusBarEl.createSpan({ cls: "custom-sync-status-text", text });
-    textEl.style.marginLeft = "6px";
 
     const iconName =
       this.state === "ok"

@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
 import type { SyncEngine } from "../sync/engine";
 import type { PluginLanguage, StartupSyncMode, SyncSettings } from "../settings";
 
@@ -14,7 +14,6 @@ export interface SyncSettingsTabContext {
   saveSettings: () => Promise<void>;
   setStartupMode: (mode: StartupSyncMode) => void;
   testServerConnection: () => Promise<void>;
-  deleteConflictFiles: () => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -33,6 +32,22 @@ export class SyncSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const t = this.plugin.t;
+    const maskSecret = (value: string) => {
+      if (!value) return "";
+      if (value.length <= 4) return "*".repeat(value.length);
+      return `${"*".repeat(Math.max(8, value.length - 4))}${value.slice(-4)}`;
+    };
+    const copyValue = async (value: string, valueLabel: string) => {
+      if (!value) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        new Notice(t("notices.copied", { value: valueLabel }));
+      } catch (error) {
+        new Notice(t("notices.copy_failed", { error: String(error) }));
+      }
+    };
     const addSection = (title: string, desc?: string) => {
       containerEl.createEl("h3", { text: title });
       if (desc) {
@@ -78,7 +93,7 @@ export class SyncSettingsTab extends PluginSettingTab {
       .addDropdown((dropdown) =>
         dropdown
           .addOption("off", t("settings.startup_mode.off"))
-          .addOption("lazy", t("settings.startup_mode.lazy"))
+          .addOption("immediate", t("settings.startup_mode.immediate"))
           .addOption("smooth", t("settings.startup_mode.smooth"))
           .setValue(this.plugin.settings.startupMode)
           .onChange(async (value) => {
@@ -111,37 +126,69 @@ export class SyncSettingsTab extends PluginSettingTab {
         })
       );
 
-    const serverStatusText =
-      this.plugin.serverConnectionState === "ok"
-        ? t("settings.server.connected", { value: this.plugin.serverConnectionMessage })
-        : this.plugin.serverConnectionState === "error"
-          ? t("settings.server.failed", { value: this.plugin.serverConnectionMessage })
-          : this.plugin.serverConnectionMessage || t("settings.server.not_checked");
-    const serverStatusColor =
-      this.plugin.serverConnectionState === "ok"
+    const statusState = this.plugin.serverConnectionState;
+    const statusLabel =
+      statusState === "ok"
+        ? t("settings.server_status.ok")
+        : statusState === "error"
+          ? t("settings.server_status.error")
+          : t("settings.server_status.unknown");
+    const statusColor =
+      statusState === "ok"
         ? "var(--color-green)"
-        : this.plugin.serverConnectionState === "error"
+        : statusState === "error"
           ? "var(--color-red)"
           : "var(--text-muted)";
-
     const serverUrlDesc = serverUrlSetting.settingEl.querySelector(".setting-item-description");
     if (serverUrlDesc instanceof HTMLElement) {
-      const statusEl = serverUrlDesc.createDiv({ cls: "custom-sync-server-status" });
-      statusEl.textContent = serverStatusText;
-      statusEl.style.color = serverStatusColor;
+      const statusRow = serverUrlDesc.createDiv({ cls: "custom-sync-server-status" });
+      statusRow.style.display = "flex";
+      statusRow.style.alignItems = "center";
+      statusRow.style.gap = "6px";
+      statusRow.style.marginTop = "4px";
+
+      const statusEl = statusRow.createSpan({
+        text: t("settings.server_status.inline", { value: statusLabel })
+      });
+      statusEl.style.color = statusColor;
       statusEl.style.fontWeight = "600";
-      statusEl.style.marginTop = "4px";
+      statusEl.style.fontSize = "12px";
+
+      const message = (this.plugin.serverConnectionMessage || t("settings.server.not_checked")).trim();
     }
+
+    new Setting(containerEl)
+      .setName(t("settings.auth_token.name"))
+      .setDesc(t("settings.auth_token.desc"))
+      .addText((text) => {
+        text.inputEl.type = "password";
+        return text
+          .setPlaceholder(t("settings.auth_token.placeholder"))
+          .setValue(this.plugin.settings.authToken)
+          .onChange(async (value) => {
+            this.plugin.settings.authToken = value.trim();
+            await this.plugin.saveSettings();
+          });
+      });
 
     addSection(t("settings.section_performance"));
 
     new Setting(containerEl)
       .setName(t("settings.api_key.name"))
       .setDesc(t("settings.api_key.desc"))
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.apiKey)
-          .setDisabled(true)
+      .addText((text) => {
+        text.inputEl.type = "password";
+        return text
+          .setValue(maskSecret(this.plugin.settings.apiKey))
+          .setDisabled(true);
+      })
+      .addButton((button) =>
+        button
+          .setButtonText(t("settings.api_key.copy"))
+          .setDisabled(!this.plugin.settings.apiKey)
+          .onClick(async () => {
+            await copyValue(this.plugin.settings.apiKey, t("settings.api_key.name"));
+          })
       );
 
     new Setting(containerEl)
@@ -284,6 +331,14 @@ export class SyncSettingsTab extends PluginSettingTab {
         text
           .setValue(this.plugin.settings.deviceId)
           .setDisabled(true)
+      )
+      .addButton((button) =>
+        button
+          .setButtonText(t("settings.device_id.copy"))
+          .setDisabled(!this.plugin.settings.deviceId)
+          .onClick(async () => {
+            await copyValue(this.plugin.settings.deviceId, t("settings.device_id.name"));
+          })
       );
 
     new Setting(containerEl)
@@ -327,20 +382,5 @@ export class SyncSettingsTab extends PluginSettingTab {
         })
       );
 
-    addSection(t("settings.section_maintenance"));
-
-    new Setting(containerEl)
-      .setName(t("settings.delete_conflicts.name"))
-      .setDesc(t("settings.delete_conflicts.desc"))
-      .addButton((button) =>
-        button.setButtonText(t("settings.delete_conflicts.button")).onClick(async () => {
-          button.setDisabled(true);
-          try {
-            await this.plugin.deleteConflictFiles();
-          } finally {
-            button.setDisabled(false);
-          }
-        })
-      );
   }
 }

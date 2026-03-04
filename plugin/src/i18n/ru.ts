@@ -1,18 +1,18 @@
 const ru = {
-  "commands.sync_now": "Custom Sync: Синхронизировать сейчас",
-  "commands.register_device": "Custom Sync: Зарегистрировать устройство",
+  "commands.sync_now": "Vault Sync: Синхронизировать сейчас",
+  "commands.register_device": "Vault Sync: Зарегистрировать устройство",
 
   "notices.device_registered": "Устройство зарегистрировано. API-ключ сохранен в настройках плагина.",
   "notices.register_failed": "Ошибка регистрации: {{error}}",
   "notices.sync_complete": "Синхронизация завершена",
   "notices.sync_failed": "Ошибка синхронизации: {{detail}}",
   "notices.sync_disabled_revoked": "Синхронизация отключена: ключ устройства недействителен/отозван. Перерегистрируйте устройство в настройках плагина.",
-  "notices.no_conflicts_found": "Конфликтных файлов не найдено.",
-  "notices.conflict_cleanup_done": "Очистка конфликтов завершена: удалено {{deleted}}.",
-  "notices.conflict_cleanup_partial": "Очистка конфликтов завершена: удалено {{deleted}}, ошибок {{failed}}.",
   "notices.server_url_empty": "Адрес сервера пустой.",
+  "notices.auth_token_missing": "Для автоматической регистрации устройства нужен auth token.",
   "notices.connection_failed": "Ошибка подключения: {{error}}",
   "notices.connection_ok": "Подключение OK: {{status}}",
+  "notices.copied": "{{value}} скопировано",
+  "notices.copy_failed": "Не удалось скопировать: {{error}}",
 
   "status.sync_disabled": "Синк отключен",
   "status.sync_revoked": "Ключ отозван",
@@ -33,7 +33,6 @@ const ru = {
   "settings.section_reliability": "Надежность",
   "settings.section_security": "Безопасность",
   "settings.section_device": "Устройство",
-  "settings.section_maintenance": "Обслуживание",
 
   "settings.language.name": "Язык",
   "settings.language.desc": "Язык интерфейса плагина.",
@@ -45,22 +44,34 @@ const ru = {
   "settings.enable_sync.desc": "Включить/выключить автоматическую синхронизацию. Ручная команда синка остается доступной.",
 
   "settings.startup_mode.name": "Режим синка при запуске",
-  "settings.startup_mode.desc": "Выкл: без синка при старте. Отложенный: запуск синка с задержкой. Плавный: мягкий прогрев синка после старта.",
+  "settings.startup_mode.desc": "Выкл: без синка при старте. Сразу: синк сразу после запуска. Плавный: мягкий прогрев синка после старта.",
   "settings.startup_mode.off": "Выкл",
-  "settings.startup_mode.lazy": "Отложенный",
+  "settings.startup_mode.immediate": "Сразу",
   "settings.startup_mode.smooth": "Плавный",
 
   "settings.server_url.name": "Адрес сервера",
   "settings.server_url.desc": "Базовый URL Sync API",
   "settings.server_url.test": "Проверить",
+  "settings.server_status.name": "Статус сервера",
+  "settings.server_status.desc": "Результат последней проверки подключения.",
+  "settings.server_status.ok": "Подключено",
+  "settings.server_status.error": "Ошибка",
+  "settings.server_status.unknown": "Не проверено",
+  "settings.server_status.title": "Статус подключения",
+  "settings.server_status.inline": "Статус подключения: {{value}}",
+  "settings.auth_token.name": "Auth token",
+  "settings.auth_token.desc": "Общий секрет, который сервер требует для регистрации новых устройств.",
+  "settings.auth_token.placeholder": "Обязательно для авторегистрации",
   "settings.server.connected": "Подключено: {{value}}",
   "settings.server.failed": "Ошибка подключения: {{value}}",
   "settings.server.not_checked": "Еще не проверено",
 
   "settings.api_key.name": "API-ключ",
   "settings.api_key.desc": "Назначается автоматически при регистрации",
+  "settings.api_key.copy": "Копировать",
   "settings.device_id.name": "ID устройства",
   "settings.device_id.desc": "Назначается сервером автоматически при регистрации",
+  "settings.device_id.copy": "Копировать",
   "settings.vault_name.name": "Имя хранилища",
   "settings.vault_name.desc": "Имя хранилища для регистрации устройства",
   "settings.passphrase.name": "Кодовая фраза",
@@ -91,11 +102,7 @@ const ru = {
   "settings.register_device.desc": "Запрашивает API-ключ и ID устройства у сервера и сохраняет их.",
   "settings.register_device.revoked_desc": "Ключ устройства отозван. Нажмите «Перерегистрировать», чтобы получить новый.",
   "settings.register_device.button": "Зарегистрировать",
-  "settings.register_device.button_reregister": "Перерегистрировать",
-
-  "settings.delete_conflicts.name": "Удалить конфликты",
-  "settings.delete_conflicts.desc": "Удалить конфликтные файлы из скрытой папки синка и старых файлов формата *.conflict.*.",
-  "settings.delete_conflicts.button": "Удалить"
+  "settings.register_device.button_reregister": "Перерегистрировать"
 } as const;
 
 export default ru;

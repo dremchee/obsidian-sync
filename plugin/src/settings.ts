@@ -1,4 +1,4 @@
-export type StartupSyncMode = "off" | "lazy" | "smooth";
+export type StartupSyncMode = "off" | "smooth" | "immediate";
 export type PluginLanguage = "auto" | "en" | "ru";
 
 export interface SyncSettings {
@@ -7,6 +7,7 @@ export interface SyncSettings {
   startupMode: StartupSyncMode;
   language: PluginLanguage;
   serverUrl: string;
+  authToken: string;
   apiKey: string;
   deviceId: string;
   vaultName: string;

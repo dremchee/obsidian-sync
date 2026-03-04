@@ -1,18 +1,18 @@
 const en = {
-  "commands.sync_now": "Custom Sync: Sync now",
-  "commands.register_device": "Custom Sync: Register device",
+  "commands.sync_now": "Vault Sync: Sync now",
+  "commands.register_device": "Vault Sync: Register device",
 
   "notices.device_registered": "Device registered. API key saved in plugin settings.",
   "notices.register_failed": "Register failed: {{error}}",
   "notices.sync_complete": "Sync complete",
   "notices.sync_failed": "Sync failed: {{detail}}",
   "notices.sync_disabled_revoked": "Sync disabled: device API key is invalid/revoked. Re-register device in plugin settings.",
-  "notices.no_conflicts_found": "No conflict files found.",
-  "notices.conflict_cleanup_done": "Conflict cleanup done: deleted {{deleted}}.",
-  "notices.conflict_cleanup_partial": "Conflict cleanup done: deleted {{deleted}}, failed {{failed}}.",
   "notices.server_url_empty": "Server URL is empty.",
+  "notices.auth_token_missing": "Auth token is required for automatic device registration.",
   "notices.connection_failed": "Connection failed: {{error}}",
   "notices.connection_ok": "Connection OK: {{status}}",
+  "notices.copied": "{{value}} copied",
+  "notices.copy_failed": "Copy failed: {{error}}",
 
   "status.sync_disabled": "Sync disabled",
   "status.sync_revoked": "Sync revoked",
@@ -33,7 +33,6 @@ const en = {
   "settings.section_reliability": "Reliability",
   "settings.section_security": "Security",
   "settings.section_device": "Device",
-  "settings.section_maintenance": "Maintenance",
 
   "settings.language.name": "Language",
   "settings.language.desc": "UI language for this plugin.",
@@ -45,22 +44,34 @@ const en = {
   "settings.enable_sync.desc": "Turn automatic sync on/off. Manual sync command still works.",
 
   "settings.startup_mode.name": "Startup sync mode",
-  "settings.startup_mode.desc": "Off: no startup sync. Lazy: delayed normal sync. Smooth: delayed warm-up sync.",
+  "settings.startup_mode.desc": "Off: no startup sync. Immediate: sync right after startup. Smooth: delayed warm-up sync.",
   "settings.startup_mode.off": "Off",
-  "settings.startup_mode.lazy": "Lazy",
+  "settings.startup_mode.immediate": "Immediate",
   "settings.startup_mode.smooth": "Smooth",
 
   "settings.server_url.name": "Server URL",
   "settings.server_url.desc": "Base URL of the Sync API",
   "settings.server_url.test": "Test",
+  "settings.server_status.name": "Server status",
+  "settings.server_status.desc": "Last connectivity check result.",
+  "settings.server_status.ok": "Connected",
+  "settings.server_status.error": "Error",
+  "settings.server_status.unknown": "Not checked",
+  "settings.server_status.title": "Connection status",
+  "settings.server_status.inline": "Connection status: {{value}}",
+  "settings.auth_token.name": "Auth token",
+  "settings.auth_token.desc": "Shared secret required by server to register new devices.",
+  "settings.auth_token.placeholder": "Required for auto registration",
   "settings.server.connected": "Connected: {{value}}",
   "settings.server.failed": "Connection failed: {{value}}",
   "settings.server.not_checked": "Not checked yet",
 
   "settings.api_key.name": "API key",
   "settings.api_key.desc": "Assigned automatically on register",
+  "settings.api_key.copy": "Copy",
   "settings.device_id.name": "Device ID",
   "settings.device_id.desc": "Assigned automatically by server on register",
+  "settings.device_id.copy": "Copy",
   "settings.vault_name.name": "Vault name",
   "settings.vault_name.desc": "Vault name used for device registration",
   "settings.passphrase.name": "Passphrase",
@@ -91,11 +102,7 @@ const en = {
   "settings.register_device.desc": "Requests API key/device ID from server and saves them.",
   "settings.register_device.revoked_desc": "Device key is revoked. Click Register to re-register this device.",
   "settings.register_device.button": "Register",
-  "settings.register_device.button_reregister": "Re-register",
-
-  "settings.delete_conflicts.name": "Delete conflicts",
-  "settings.delete_conflicts.desc": "Delete conflict files from hidden sync folder and legacy *.conflict.* files.",
-  "settings.delete_conflicts.button": "Delete"
+  "settings.register_device.button_reregister": "Re-register"
 } as const;
 
 export default en;

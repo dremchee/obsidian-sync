@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: SyncSettings = {
   startupMode: "smooth",
   language: "auto",
   serverUrl: "http://127.0.0.1:3243",
+  authToken: "",
   apiKey: "",
   deviceId: "",
   vaultName: "default",
@@ -42,6 +43,7 @@ export default class CustomSyncPlugin extends Plugin {
   startupSmoothActive = false;
   startupWarmupCyclesLeft = 0;
   persistTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  registerInProgress = false;
   private readonly translator = createTranslator(() => this.settings.language);
 
   t = (key: string, params?: Record<string, string | number>) => this.translator(key, params);
@@ -121,6 +123,9 @@ export default class CustomSyncPlugin extends Plugin {
 
   async loadSettings(persisted?: { settings?: Partial<SyncSettings> }) {
     const loaded = Object.assign({}, DEFAULT_SETTINGS, persisted?.settings || {}) as SyncSettings;
+    if ((loaded.startupMode as string) === "lazy") {
+      loaded.startupMode = "smooth";
+    }
     if (!loaded.startupMode) {
       loaded.startupMode = loaded.syncOnStartup ? "smooth" : "off";
     }
@@ -183,6 +188,14 @@ export default class CustomSyncPlugin extends Plugin {
     this.startupWarmupCyclesLeft = this.startupSmoothActive ? 3 : 0;
     this.updateStatusBar();
 
+    if (this.settings.startupMode === "immediate") {
+      this.syncTimer = globalThis.setTimeout(() => {
+        this.syncTimer = null;
+        void this.syncNow(false, false);
+      }, 0);
+      return;
+    }
+
     const baseDelayMs = Math.max(10, this.settings.intervalSec) * 1000;
     const jitterMs = Math.floor(Math.random() * (this.startupSmoothActive ? 10_000 : 3_000));
     const delayMs = baseDelayMs + jitterMs;
@@ -212,7 +225,7 @@ export default class CustomSyncPlugin extends Plugin {
 
   private scheduleSync(immediate = false) {
     if (!this.settings.syncEnabled) return;
-    if (!this.engine || !this.settings.apiKey || !this.settings.passphrase) return;
+    if (!this.engine || !this.settings.passphrase) return;
     if (this.syncInProgress) return;
     if (this.syncTimer) return;
 
@@ -258,9 +271,14 @@ export default class CustomSyncPlugin extends Plugin {
 
   private async syncNow(showNotice = false, force = false) {
     if (!force && !this.settings.syncEnabled) return;
-    if (!this.engine || !this.settings.apiKey || !this.settings.passphrase) return;
+    if (!this.engine || !this.settings.passphrase) return;
     if (this.syncInProgress) return;
     if (!this.pendingSync && !showNotice) return;
+
+    if (!this.settings.apiKey) {
+      const registered = await this.ensureDeviceRegistered(showNotice);
+      if (!registered) return;
+    }
 
     this.syncInProgress = true;
     this.pendingSync = false;
@@ -315,34 +333,36 @@ export default class CustomSyncPlugin extends Plugin {
     }
   }
 
-  async deleteConflictFiles() {
-    const hiddenPrefix = ".obsidian/custom-self-hosted-sync/conflicts/";
-    const files = this.app.vault.getFiles().filter((f) => {
-      if (f.path.startsWith(hiddenPrefix)) return true;
-      return /\.conflict\.[^.]+\.\d+\.md$/i.test(f.path) || f.path.includes(".conflict.");
-    });
-
-    if (!files.length) {
-      new Notice(this.t("notices.no_conflicts_found"));
-      return;
-    }
-
-    let deleted = 0;
-    let failed = 0;
-    for (const file of files) {
-      try {
-        await this.app.vault.delete(file);
-        deleted += 1;
-      } catch {
-        failed += 1;
+  private async ensureDeviceRegistered(showNotice: boolean): Promise<boolean> {
+    if (!this.engine) return false;
+    if (this.settings.apiKey) return true;
+    if (!this.settings.authToken) {
+      if (showNotice) {
+        new Notice(this.t("notices.auth_token_missing"));
       }
+      return false;
     }
+    if (this.registerInProgress) return false;
 
-    if (failed > 0) {
-      new Notice(this.t("notices.conflict_cleanup_partial", { deleted, failed }));
-      return;
+    this.registerInProgress = true;
+    try {
+      const reg = await this.engine.registerDevice();
+      this.settings.apiKey = reg.apiKey;
+      this.settings.deviceId = reg.deviceId;
+      await this.persistPluginData();
+      this.revokedNoticeShown = false;
+      this.isDeviceRevoked = false;
+      this.refreshSettingsUi();
+      new Notice(this.t("notices.device_registered"));
+      return true;
+    } catch (err) {
+      if (showNotice) {
+        new Notice(this.t("notices.register_failed", { error: String(err) }));
+      }
+      return false;
+    } finally {
+      this.registerInProgress = false;
     }
-    new Notice(this.t("notices.conflict_cleanup_done", { deleted }));
   }
 
   private isDeviceRevokedError(err: unknown): boolean {

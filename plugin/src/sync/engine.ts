@@ -194,7 +194,9 @@ export class SyncEngine {
         const res: RequestUrlResponse = await requestUrl({
           url: this.endpoint(path),
           method: "GET",
-          headers: { authorization: `Bearer ${this.settings.apiKey}` },
+          headers: {
+            authorization: `Bearer ${this.settings.apiKey}`
+          },
           throw: false
         });
         if (res.status >= 400) {
@@ -213,7 +215,9 @@ export class SyncEngine {
         const res = await requestUrl({
           url: this.endpoint(path),
           method: "PUT",
-          headers: { authorization: `Bearer ${this.settings.apiKey}` },
+          headers: {
+            authorization: `Bearer ${this.settings.apiKey}`
+          },
           body: toArrayBuffer(bytes),
           throw: false
         });
@@ -227,9 +231,14 @@ export class SyncEngine {
   }
 
   async registerDevice() {
+    if (!this.settings.authToken) {
+      throw new Error("Auth token is required");
+    }
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    headers["x-auth-token"] = this.settings.authToken;
     const data = await this.requestJson<{ apiKey: string; deviceId: string }>("/api/v1/device/register", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers,
       body: {
         vaultName: this.settings.vaultName,
         deviceName: `${navigator.platform || "unknown"}-${Date.now()}`
