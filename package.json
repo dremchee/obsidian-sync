@@ -9,7 +9,8 @@
     "dev:server": "npm --workspace server run dev",
     "build:server": "npm --workspace server run build",
     "dev:plugin": "npm --workspace plugin run dev",
-    "build:plugin": "npm --workspace plugin run build"
+    "build:plugin": "npm --workspace plugin run build",
+    "deploy:plugin": "npm run build:plugin && npm --workspace plugin run deploy:obsidian"
   },
   "devDependencies": {
     "@types/node": "^25.3.3"

@@ -28,6 +28,7 @@ API base URL: `http://127.0.0.1:3243`
 
 - `DATA_DIR` path to runtime data (`app.db`, blobs, logs, backups)
 - `ADMIN_TOKEN` secret token for admin endpoints (currently `POST /api/v1/admin/gc`, header `x-admin-token`)
+- `AUTH_TOKEN` shared secret required for `POST /api/v1/device/register` (`x-auth-token`)
 - `API_KEY_PEPPER` server-side secret "pepper" used when hashing/verifying device API keys
 - `LOG_LEVEL` logging verbosity (`info`, `warn`, `error`, etc.)
 - `LOG_SENSITIVE_MODE` sensitive-field logging mode (`redact` or `drop`)
@@ -36,6 +37,7 @@ API base URL: `http://127.0.0.1:3243`
 
 Security notes:
 - keep `ADMIN_TOKEN` and `API_KEY_PEPPER` only in `.env`/secret manager and never commit them
+- keep `AUTH_TOKEN` secret and share only with trusted devices/users
 - use long random values
 - rotating `API_KEY_PEPPER` invalidates existing device API keys (devices must re-register)
 
@@ -43,6 +45,7 @@ Security notes:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:3243/api/v1/device/register \
+  -H 'x-auth-token: <AUTH_TOKEN>' \
   -H 'content-type: application/json' \
   -d '{"vaultName":"default","deviceName":"desktop"}'
 ```
