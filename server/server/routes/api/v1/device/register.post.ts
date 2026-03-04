@@ -2,12 +2,14 @@ import { defineEventHandler, readBody, createError } from "h3";
 import { eq } from "drizzle-orm";
 import { devices, syncCursors, vaults } from "#app/db/schema";
 import { getOrmDb } from "#app/utils/db";
-import { generateApiKey, hashApiKey, newId } from "#app/utils/auth";
+import { generateApiKey, hashApiKey, newId, requireAuthToken } from "#app/utils/auth";
 import { logError, logInfo } from "#app/utils/logger";
 
 export default defineEventHandler(async (event) => {
   const startedAt = Date.now();
   try {
+    requireAuthToken(event);
+
     const body = await readBody<{ vaultName?: string; deviceName?: string }>(event);
     const vaultName = (body?.vaultName || "default").trim();
     const deviceName = (body?.deviceName || "device").trim();

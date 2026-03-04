@@ -18,6 +18,18 @@ export function newId(prefix: string) {
   return `${prefix}_${randomBytes(8).toString("hex")}`;
 }
 
+export function requireAuthToken(event: H3Event) {
+  const cfg = useRuntimeConfig();
+  const configured = String(cfg.authToken || "").trim();
+  if (!configured) {
+    throw createError({ statusCode: 500, statusMessage: "Server auth token is not configured" });
+  }
+  const provided = String(getHeader(event, "x-auth-token") || "").trim();
+  if (!provided || provided !== configured) {
+    throw createError({ statusCode: 403, statusMessage: "Invalid auth token" });
+  }
+}
+
 export async function requireDevice(event: H3Event) {
   const header = getHeader(event, "authorization");
   if (!header || !header.startsWith("Bearer ")) {

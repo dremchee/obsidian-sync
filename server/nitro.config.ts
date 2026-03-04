@@ -12,6 +12,7 @@ export default defineNitroConfig({
   runtimeConfig: {
     dataDir: process.env.DATA_DIR || "../data",
     adminToken: process.env.ADMIN_TOKEN || "",
+    authToken: process.env.AUTH_TOKEN || "",
     apiKeyPepper: process.env.API_KEY_PEPPER || "",
     logLevel: process.env.LOG_LEVEL || "info",
     logSensitiveMode: process.env.LOG_SENSITIVE_MODE || "redact",
