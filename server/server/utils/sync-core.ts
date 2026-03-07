@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { AppDb } from "#app/db/client";
-import { events, fileRevisions, files, syncOperations } from "#app/db/schema";
+import { conflicts, events, fileRevisions, files, syncOperations } from "#app/db/schema";
 import { getOrmDb } from "#app/utils/db";
 import { newId } from "#app/utils/auth";
 import { syncEventBus } from "#app/utils/event-bus";
@@ -18,6 +18,18 @@ export type PushOperation = {
 
 function normalizePath(p: string) {
   return p.replaceAll("\\", "/").replace(/^\/+/, "");
+}
+
+function makeConflictPath(originalPath: string, deviceId: string, ts: number): string {
+  const d = new Date(ts);
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const short = deviceId.length > 8 ? deviceId.slice(-8) : deviceId;
+  const lastDot = originalPath.lastIndexOf(".");
+  const lastSlash = originalPath.lastIndexOf("/");
+  if (lastDot > lastSlash + 1) {
+    return `${originalPath.slice(0, lastDot)} (conflict ${short} ${date})${originalPath.slice(lastDot)}`;
+  }
+  return `${originalPath} (conflict ${short} ${date})`;
 }
 
 function fileForPath(db: AppDb, vaultId: string, p: string) {
@@ -116,12 +128,32 @@ function movePath(db: AppDb, vaultId: string, fromPath: string, toPath: string) 
   db.update(files).set({ path: toPath }).where(and(eq(files.vaultId, vaultId), eq(files.path, fromPath))).run();
 }
 
+function recordConflict(
+  db: AppDb,
+  fileId: string,
+  winnerRevisionId: string,
+  loserRevisionId: string,
+  conflictPath: string,
+  now: number
+) {
+  db.insert(conflicts).values({
+    id: newId("conflict"),
+    fileId,
+    winnerRevisionId,
+    loserRevisionId,
+    conflictPath,
+    createdAt: now
+  }).run();
+}
+
+type OpResultStatus = "applied" | "duplicate" | "ignored" | "conflict";
+
 export function applyOperations(vaultId: string, deviceId: string, ops: PushOperation[]) {
   const db = getOrmDb();
   const now = Date.now();
   const results: Array<{
     operationId: string;
-    status: "applied" | "duplicate" | "ignored";
+    status: OpResultStatus;
     revisionId?: string;
     headRevisionId?: string;
     conflictPath?: string;
@@ -169,14 +201,19 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
       const ts = raw.clientTs || Date.now();
       const op = raw.op;
       const p = normalizePath(raw.path);
-      const setOpResult = (data: { status: "applied" | "ignored"; revisionId?: string; headRevisionId?: string }) => {
+      const setOpResult = (data: {
+        status: OpResultStatus;
+        revisionId?: string;
+        headRevisionId?: string;
+        conflictPath?: string;
+      }) => {
         tx
           .update(syncOperations)
           .set({
             resultStatus: data.status,
             resultRevisionId: data.revisionId || null,
             resultHeadRevisionId: data.headRevisionId || null,
-            resultConflictPath: null
+            resultConflictPath: data.conflictPath || null
           })
           .where(and(eq(syncOperations.deviceId, deviceId), eq(syncOperations.operationId, opId)))
           .run();
@@ -200,7 +237,26 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
         const head = getHeadTs(tx, file.id);
         const staleBase = Boolean(raw.baseRevisionId && head?.id && raw.baseRevisionId !== head.id);
         const incomingWins = !head || ts > head.ts || (ts === head.ts && deviceId > head.deviceId);
-        if (staleBase || !incomingWins) {
+
+        if (staleBase) {
+          const rev = insertRevision(tx, {
+            fileId: file.id,
+            path: p,
+            op: "rename",
+            blobHash: null,
+            size: null,
+            deviceId,
+            ts,
+            prevRevisionId: raw.baseRevisionId || null
+          });
+          const cPath = makeConflictPath(from, deviceId, ts);
+          recordConflict(tx, file.id, head!.id, rev, cPath, now);
+          setOpResult({ status: "conflict", revisionId: rev, headRevisionId: head!.id, conflictPath: cPath });
+          results.push({ operationId: opId, status: "conflict", revisionId: rev, headRevisionId: head!.id, conflictPath: cPath });
+          continue;
+        }
+
+        if (!incomingWins) {
           setOpResult({ status: "ignored", headRevisionId: head?.id || undefined });
           results.push({ operationId: opId, status: "ignored", headRevisionId: head?.id || undefined });
           continue;
@@ -230,7 +286,25 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
       const staleBase = Boolean(raw.baseRevisionId && head?.id && raw.baseRevisionId !== head.id);
       const incomingWins = !head || ts > head.ts || (ts === head.ts && deviceId > head.deviceId);
 
-      if (staleBase || !incomingWins) {
+      if (staleBase) {
+        const rev = insertRevision(tx, {
+          fileId,
+          path: p,
+          op,
+          blobHash: raw.blobHash || null,
+          size: raw.size || null,
+          deviceId,
+          ts,
+          prevRevisionId: raw.baseRevisionId || null
+        });
+        const cPath = makeConflictPath(p, deviceId, ts);
+        recordConflict(tx, fileId, head!.id, rev, cPath, now);
+        setOpResult({ status: "conflict", revisionId: rev, headRevisionId: head!.id, conflictPath: cPath });
+        results.push({ operationId: opId, status: "conflict", revisionId: rev, headRevisionId: head!.id, conflictPath: cPath });
+        continue;
+      }
+
+      if (!incomingWins) {
         setOpResult({ status: "ignored", headRevisionId: head?.id || undefined });
         results.push({ operationId: opId, status: "ignored", headRevisionId: head?.id || undefined });
         continue;

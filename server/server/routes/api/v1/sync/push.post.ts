@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
         acc[r.status] += 1;
         return acc;
       },
-      { applied: 0, duplicate: 0, ignored: 0 }
+      { applied: 0, duplicate: 0, ignored: 0, conflict: 0 }
     );
 
     logInfo("sync.push.done", {
