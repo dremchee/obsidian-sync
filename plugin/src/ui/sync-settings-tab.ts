@@ -372,27 +372,40 @@ export class SyncSettingsTab extends PluginSettingTab {
           ? t("settings.register_device.revoked_desc")
           : t("settings.register_device.desc")
       )
-      .addButton((button) =>
-        button.setButtonText(this.plugin.isDeviceRevoked ? t("settings.register_device.button_reregister") : t("settings.register_device.button")).onClick(async () => {
-          button.setDisabled(true);
-          try {
-            const reg = await this.plugin.engine?.registerDevice();
-            if (reg) {
-              this.plugin.settings.apiKey = reg.apiKey;
-              this.plugin.settings.deviceId = reg.deviceId;
-              await this.plugin.saveSettings();
-              this.plugin.isDeviceRevoked = false;
-              this.plugin.revokedNoticeShown = false;
-              new Notice(t("notices.device_registered"));
-              this.display();
+      .addButton((button) => {
+        const isRegistered = this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked;
+
+        button.setDisabled(isRegistered);
+        button.setButtonText(
+          isRegistered
+            ? "Зарегистрировано"
+            : this.plugin.isDeviceRevoked
+              ? t("settings.register_device.button_reregister")
+              : t("settings.register_device.button")
+        );
+
+        if (!isRegistered) {
+          button.onClick(async () => {
+            button.setDisabled(true);
+            try {
+              const reg = await this.plugin.engine?.registerDevice();
+              if (reg) {
+                this.plugin.settings.apiKey = reg.apiKey;
+                this.plugin.settings.deviceId = reg.deviceId;
+                await this.plugin.saveSettings();
+                this.plugin.isDeviceRevoked = false;
+                this.plugin.revokedNoticeShown = false;
+                new Notice(t("notices.device_registered"));
+                this.display();
+              }
+            } catch (err) {
+              new Notice(t("notices.register_failed", { error: String(err) }));
+            } finally {
+              button.setDisabled(false);
             }
-          } catch (err) {
-            new Notice(t("notices.register_failed", { error: String(err) }));
-          } finally {
-            button.setDisabled(false);
-          }
-        })
-      );
+          });
+        }
+      });
 
   }
 }
