@@ -19,5 +19,6 @@ export interface SyncSettings {
   retryBaseMs: number;
   retryMaxMs: number;
   lwwPolicy: "hard";
+  enableWebSocket: boolean;
   debugPerfLogs: boolean;
 }

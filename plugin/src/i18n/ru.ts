@@ -82,6 +82,8 @@ const ru = {
 
   "settings.interval_sec.name": "Интервал (сек)",
   "settings.interval_sec.desc": "Окно троттлинга для синка по изменениям",
+  "settings.enable_websocket.name": "Синхронизация в реальном времени (WebSocket)",
+  "settings.enable_websocket.desc": "Мгновенные уведомления при пуше изменений с других устройств. При недоступности используется polling.",
   "settings.pull_batch.name": "Размер pull-батча",
   "settings.pull_batch.desc": "Максимум событий за один pull-запрос.",
   "settings.blob_batch.name": "Размер blob-батча",

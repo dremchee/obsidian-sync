@@ -1,5 +1,6 @@
 import { Notice, Plugin, TAbstractFile, requestUrl } from "obsidian";
 import { SyncEngine, type EngineStateSnapshot } from "./src/sync/engine";
+import { SyncWebSocketClient, type WsConnectionState } from "./src/sync/ws-client";
 import type { StartupSyncMode, SyncSettings } from "./src/settings";
 import { SyncSettingsTab } from "./src/ui/sync-settings-tab";
 import { StatusBarController } from "./src/ui/status-controller";
@@ -23,6 +24,7 @@ const DEFAULT_SETTINGS: SyncSettings = {
   retryBaseMs: 500,
   retryMaxMs: 30_000,
   lwwPolicy: "hard",
+  enableWebSocket: true,
   debugPerfLogs: false
 };
 
@@ -37,6 +39,8 @@ export default class CustomSyncPlugin extends Plugin {
   isDeviceRevoked = false;
   settingTab: SyncSettingsTab | null = null;
   statusBarController: StatusBarController | null = null;
+  wsClient: SyncWebSocketClient | null = null;
+  wsConnectionState: WsConnectionState = "disconnected";
   lastSyncError: string | null = null;
   serverConnectionState: "unknown" | "ok" | "error" = "unknown";
   serverConnectionMessage = "Not checked yet";
@@ -60,6 +64,8 @@ export default class CustomSyncPlugin extends Plugin {
       this.statusBarController?.openMenu(evt, this.lastSyncAt, () => this.openPluginSettings())
     );
     this.updateStatusBar();
+
+    this.connectWebSocket();
 
     this.registerEvent(this.app.vault.on("create", (file) => this.markDirtyAndSchedule(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => this.markDirtyAndSchedule(file)));
@@ -101,6 +107,7 @@ export default class CustomSyncPlugin extends Plugin {
   }
 
   onunload() {
+    this.disconnectWebSocket();
     if (this.syncTimer) {
       globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
@@ -112,7 +119,43 @@ export default class CustomSyncPlugin extends Plugin {
     void this.persistPluginData();
   }
 
-  private async loadPersistedData(): Promise<{ settings?: Partial<SyncSettings>; syncState?: EngineStateSnapshot } > {
+  connectWebSocket() {
+    this.disconnectWebSocket();
+    if (!this.settings.enableWebSocket || !this.settings.apiKey || !this.settings.serverUrl) return;
+
+    this.wsClient = new SyncWebSocketClient({
+      serverUrl: this.settings.serverUrl,
+      apiKey: this.settings.apiKey,
+      onNewEvents: () => {
+        this.pendingSync = true;
+        this.updateStatusBar();
+        if (this.syncInProgress) return;
+        if (this.syncTimer) {
+          globalThis.clearTimeout(this.syncTimer);
+          this.syncTimer = null;
+        }
+        void this.syncNow(false, true);
+      },
+      onStateChange: (state) => {
+        this.wsConnectionState = state;
+        this.updateStatusBar();
+      },
+      debugLog: this.settings.debugPerfLogs
+        ? (msg) => console.debug(`[custom-sync][ws] ${msg}`)
+        : undefined
+    });
+    this.wsClient.connect();
+  }
+
+  private disconnectWebSocket() {
+    if (this.wsClient) {
+      this.wsClient.disconnect();
+      this.wsClient = null;
+      this.wsConnectionState = "disconnected";
+    }
+  }
+
+  private async loadPersistedData(): Promise<{ settings?: Partial<SyncSettings>; syncState?: EngineStateSnapshot }> {
     const raw = await this.loadData();
     if (raw && typeof raw === "object" && "settings" in (raw as Record<string, unknown>)) {
       const data = raw as { settings?: Partial<SyncSettings>; syncState?: EngineStateSnapshot };
@@ -147,6 +190,7 @@ export default class CustomSyncPlugin extends Plugin {
     }
     this.pendingSync = true;
     this.updateStatusBar();
+    this.connectWebSocket();
     this.scheduleSync();
   }
 

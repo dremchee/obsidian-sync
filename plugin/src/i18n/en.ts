@@ -82,6 +82,8 @@ const en = {
 
   "settings.interval_sec.name": "Interval (sec)",
   "settings.interval_sec.desc": "Throttle window for change-based sync",
+  "settings.enable_websocket.name": "Real-time sync (WebSocket)",
+  "settings.enable_websocket.desc": "Receive instant notifications when other devices push changes. Falls back to polling if unavailable.",
   "settings.pull_batch.name": "Pull batch size",
   "settings.pull_batch.desc": "Max events per pull request.",
   "settings.blob_batch.name": "Blob batch size",

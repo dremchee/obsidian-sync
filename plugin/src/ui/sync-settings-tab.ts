@@ -268,6 +268,18 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName(t("settings.enable_websocket.name"))
+      .setDesc(t("settings.enable_websocket.desc"))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableWebSocket)
+          .onChange(async (value) => {
+            this.plugin.settings.enableWebSocket = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     addSection(t("settings.section_reliability"));
 
     new Setting(containerEl)
