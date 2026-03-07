@@ -1,6 +1,7 @@
-import { App, requestUrl, RequestUrlResponse, TFile } from "obsidian";
+import { App, Notice, requestUrl, RequestUrlResponse, TFile } from "obsidian";
 import type { SyncSettings } from "../settings";
 import { decryptBytes, encryptBytes, utf8Decode, utf8Encode } from "./crypto";
+import { makeConflictPath } from "./conflicts";
 
 type PullEvent = {
   eventId: number;
@@ -24,15 +25,17 @@ type MissingBlobResponse = {
 
 type PushResult = {
   operationId: string;
-  status: "applied" | "duplicate" | "ignored";
+  status: "applied" | "duplicate" | "ignored" | "conflict";
   revisionId?: string;
   headRevisionId?: string;
+  conflictPath?: string;
 };
 
 type PullMetrics = {
   skipped: boolean;
   events: number;
   applied: number;
+  conflicts: number;
   durationMs: number;
 };
 
@@ -42,6 +45,7 @@ type PushMetrics = {
   uploads: number;
   operations: number;
   batches: number;
+  conflicts: number;
   encryptMs: number;
   uploadMs: number;
   pushMs: number;
@@ -262,9 +266,9 @@ export class SyncEngine {
 
       this.debugPerf(
         `run total=${totalMs}ms ` +
-        `pull=${pull.durationMs}ms(events=${pull.events},applied=${pull.applied}${pull.skipped ? ",skipped" : ""}) ` +
+        `pull=${pull.durationMs}ms(events=${pull.events},applied=${pull.applied},conflicts=${pull.conflicts}${pull.skipped ? ",skipped" : ""}) ` +
         `encrypt=${push.encryptMs}ms upload=${push.uploadMs}ms push=${push.pushMs}ms stagePushTotal=${push.durationMs}ms ` +
-        `ops=${push.operations} uploads=${push.uploads} batches=${push.batches}`
+        `ops=${push.operations} uploads=${push.uploads} batches=${push.batches} pushConflicts=${push.conflicts}`
       );
     } finally {
       this.activeRunProfile = prevProfile;
@@ -323,6 +327,7 @@ export class SyncEngine {
     let uploadMs = 0;
     let pushMs = 0;
     let batches = 0;
+    let conflictCount = 0;
     const candidates = this.collectCandidates();
     if (!candidates.length) {
       return {
@@ -331,6 +336,7 @@ export class SyncEngine {
         uploads: 0,
         operations: 0,
         batches: 0,
+        conflicts: 0,
         encryptMs: 0,
         uploadMs: 0,
         pushMs: 0,
@@ -365,6 +371,7 @@ export class SyncEngine {
         uploads: 0,
         operations: 0,
         batches: 0,
+        conflicts: 0,
         encryptMs: Math.round(encryptMs),
         uploadMs: 0,
         pushMs: 0,
@@ -413,6 +420,13 @@ export class SyncEngine {
       for (const r of res.results || []) {
         const op = chunk.find((c) => c.operationId === r.operationId);
         if (!op) continue;
+
+        if (r.status === "conflict" && r.conflictPath) {
+          conflictCount += 1;
+          await this.handlePushConflict(op.path, r.conflictPath, r.headRevisionId);
+          continue;
+        }
+
         const head = r.headRevisionId || r.revisionId;
         if (head) {
           this.headRevisionByPath.set(op.path, head);
@@ -427,11 +441,49 @@ export class SyncEngine {
       uploads: uploads.length,
       operations: operations.length,
       batches,
+      conflicts: conflictCount,
       encryptMs: Math.round(encryptMs),
       uploadMs: Math.round(uploadMs),
       pushMs: Math.round(pushMs),
       durationMs: Math.round(performance.now() - startedAt)
     };
+  }
+
+  private async handlePushConflict(originalPath: string, conflictPath: string, headRevisionId?: string) {
+    const file = this.app.vault.getAbstractFileByPath(originalPath);
+    if (!(file instanceof TFile)) return;
+
+    this.markRemoteSuppressedPath(conflictPath);
+    this.markRemoteSuppressedPath(originalPath);
+
+    try {
+      // Ensure parent directory exists for conflict path
+      const parentDir = conflictPath.substring(0, conflictPath.lastIndexOf("/"));
+      if (parentDir) {
+        await this.ensureDirectory(parentDir);
+      }
+      await this.app.vault.rename(file, conflictPath);
+      this.debugPerf(`conflict: renamed ${originalPath} -> ${conflictPath}`);
+    } catch {
+      // If rename fails, copy the content instead
+      try {
+        const content = await this.app.vault.cachedRead(file);
+        await this.app.vault.adapter.write(conflictPath, content);
+        this.debugPerf(`conflict: copied ${originalPath} -> ${conflictPath}`);
+      } catch (copyErr) {
+        console.error(`[custom-sync] failed to create conflict copy: ${copyErr}`);
+        return;
+      }
+    }
+
+    // Mark conflict copy as dirty so it gets pushed
+    this.dirtyPaths.add(conflictPath);
+    // Clear mtime so next pull can write the winning version to original path
+    this.pushedMtime.delete(originalPath);
+
+    if (headRevisionId) {
+      this.headRevisionByPath.set(originalPath, headRevisionId);
+    }
   }
 
   private async pullRemoteChanges(force = false): Promise<PullMetrics> {
@@ -443,6 +495,7 @@ export class SyncEngine {
         skipped: true,
         events: 0,
         applied: 0,
+        conflicts: 0,
         durationMs: Math.round(performance.now() - startedAt)
       };
     }
@@ -470,13 +523,15 @@ export class SyncEngine {
     );
 
     let applied = 0;
+    let conflictCount = 0;
     for (const evt of data.events) {
       if (this.settings.deviceId && evt.deviceId === this.settings.deviceId) {
         continue;
       }
       try {
-        await this.applyRemoteEvent(evt, batchedBlobs);
+        const wasConflict = await this.applyRemoteEvent(evt, batchedBlobs);
         applied += 1;
+        if (wasConflict) conflictCount += 1;
         if (applied % this.activeRunProfile.yieldEvery === 0) {
           await this.yieldToUi();
         }
@@ -494,19 +549,32 @@ export class SyncEngine {
       skipped: false,
       events: data.events.length,
       applied,
+      conflicts: conflictCount,
       durationMs: Math.round(performance.now() - startedAt)
     };
   }
 
-  private async applyRemoteEvent(evt: PullEvent, prefetchedBlobs?: Map<string, Uint8Array>) {
+  private async applyRemoteEvent(evt: PullEvent, prefetchedBlobs?: Map<string, Uint8Array>): Promise<boolean> {
     if (evt.op === "delete") {
+      // If file has local modifications, save as conflict copy before deleting
+      if (this.dirtyPaths.has(evt.path)) {
+        const f = this.app.vault.getAbstractFileByPath(evt.path);
+        if (f instanceof TFile) {
+          const conflictPath = makeConflictPath(evt.path, this.settings.deviceId || "local", Date.now());
+          await this.saveConflictCopy(f, conflictPath);
+          this.debugPerf(`conflict on delete: saved ${evt.path} -> ${conflictPath}`);
+          this.dirtyPaths.delete(evt.path);
+          this.dirtyPaths.add(conflictPath);
+        }
+      }
+
       this.markRemoteSuppressedPath(evt.path);
       const f = this.app.vault.getAbstractFileByPath(evt.path);
       if (f instanceof TFile) await this.app.vault.delete(f);
-      return;
+      return false;
     }
 
-    if (!evt.blobHash) return;
+    if (!evt.blobHash) return false;
     const raw = prefetchedBlobs?.get(evt.blobHash) || await this.downloadBlob(evt.blobHash);
     let envelope: { salt: string; iv: string; ciphertext: string };
     try {
@@ -518,16 +586,50 @@ export class SyncEngine {
 
     const text = utf8Decode(plain);
     const existing = this.app.vault.getAbstractFileByPath(evt.path);
+    let wasConflict = false;
+
     if (existing instanceof TFile) {
       const currentText = await this.app.vault.cachedRead(existing);
       if (currentText === text) {
         this.pushedMtime.set(existing.path, existing.stat.mtime);
-        return;
+        return false;
       }
-      this.debugPerf(`lww overwrite path=${evt.path} remoteTs=${evt.revisionTs} localMtime=${existing.stat.mtime}`);
+
+      // Check if file has local dirty changes — this is a conflict
+      if (this.dirtyPaths.has(evt.path)) {
+        const conflictPath = makeConflictPath(evt.path, this.settings.deviceId || "local", Date.now());
+        await this.saveConflictCopy(existing, conflictPath);
+        this.debugPerf(`conflict on pull: saved ${evt.path} -> ${conflictPath}`);
+        this.dirtyPaths.delete(evt.path);
+        this.dirtyPaths.add(conflictPath);
+        wasConflict = true;
+      } else {
+        this.debugPerf(`lww overwrite path=${evt.path} remoteTs=${evt.revisionTs} localMtime=${existing.stat.mtime}`);
+      }
     }
+
     this.markRemoteSuppressedPath(evt.path);
     await this.app.vault.adapter.write(evt.path, text);
+    return wasConflict;
+  }
+
+  private async saveConflictCopy(file: TFile, conflictPath: string) {
+    this.markRemoteSuppressedPath(conflictPath);
+    const parentDir = conflictPath.substring(0, conflictPath.lastIndexOf("/"));
+    if (parentDir) {
+      await this.ensureDirectory(parentDir);
+    }
+    try {
+      const content = await this.app.vault.cachedRead(file);
+      await this.app.vault.adapter.write(conflictPath, content);
+    } catch (err) {
+      console.error(`[custom-sync] failed to save conflict copy ${conflictPath}: ${err}`);
+    }
+  }
+
+  private async ensureDirectory(dirPath: string) {
+    if (await this.app.vault.adapter.exists(dirPath)) return;
+    await this.app.vault.adapter.mkdir(dirPath);
   }
 
   private isRecoverablePayloadError(err: unknown): boolean {
