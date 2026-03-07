@@ -89,8 +89,8 @@
   "settings.retry_window.base": "base",
   "settings.retry_window.max": "max",
 
-  "settings.lww_policy.name": "LWW policy",
-  "settings.lww_policy.desc": "Conflict policy is fixed to hard LWW in this build.",
+  "settings.lww_policy.name": "Conflict policy",
+  "settings.lww_policy.desc": "LWW with conflict copies: conflicting edits are saved as separate files instead of being silently lost.",
   "settings.debug_perf.name": "Debug perf logs",
   "settings.debug_perf.desc": "Emit detailed sync stage timing logs to developer console.",
 

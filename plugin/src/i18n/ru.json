@@ -89,8 +89,8 @@
   "settings.retry_window.base": "база",
   "settings.retry_window.max": "макс",
 
-  "settings.lww_policy.name": "Политика LWW",
-  "settings.lww_policy.desc": "Политика конфликтов фиксирована: hard LWW.",
+  "settings.lww_policy.name": "Политика конфликтов",
+  "settings.lww_policy.desc": "LWW с конфликтными копиями: конфликтующие правки сохраняются как отдельные файлы вместо молчаливой потери.",
   "settings.debug_perf.name": "Отладочные логи производительности",
   "settings.debug_perf.desc": "Писать детальные тайминги этапов синка в консоль разработчика.",
 
