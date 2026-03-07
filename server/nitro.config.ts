@@ -4,7 +4,8 @@ export default defineNitroConfig({
   srcDir: "server",
   compatibilityDate: "2026-03-03",
   experimental: {
-    tasks: true
+    tasks: true,
+    websocket: true
   },
   scheduledTasks: {
     [process.env.LOG_RETENTION_CRON || "0 3 * * *"]: "log-retention"

@@ -3,6 +3,7 @@ import type { AppDb } from "#app/db/client";
 import { events, fileRevisions, files, syncOperations } from "#app/db/schema";
 import { getOrmDb } from "#app/utils/db";
 import { newId } from "#app/utils/auth";
+import { syncEventBus } from "#app/utils/event-bus";
 
 export type PushOperation = {
   operationId?: string;
@@ -126,6 +127,8 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
     conflictPath?: string;
   }> = [];
 
+  const appliedEvents: Array<{ fileId: string; revisionId: string }> = [];
+
   db.transaction((tx) => {
     for (const raw of ops) {
       const opId = raw.operationId || newId("op");
@@ -216,6 +219,7 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
         });
         upsertFileHead(tx, file.id, rev, false, ts);
         insertEvent(tx, vaultId, file.id, rev, ts);
+        appliedEvents.push({ fileId: file.id, revisionId: rev });
         setOpResult({ status: "applied", revisionId: rev, headRevisionId: rev });
         results.push({ operationId: opId, status: "applied", revisionId: rev });
         continue;
@@ -244,10 +248,19 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
       });
       upsertFileHead(tx, fileId, rev, op === "delete", ts);
       insertEvent(tx, vaultId, fileId, rev, ts);
+      appliedEvents.push({ fileId, revisionId: rev });
       setOpResult({ status: "applied", revisionId: rev, headRevisionId: rev });
       results.push({ operationId: opId, status: "applied", revisionId: rev, headRevisionId: rev });
     }
   });
+
+  for (const evt of appliedEvents) {
+    syncEventBus.emit(vaultId, {
+      fileId: evt.fileId,
+      revisionId: evt.revisionId,
+      sourceDeviceId: deviceId
+    });
+  }
 
   return results;
 }
