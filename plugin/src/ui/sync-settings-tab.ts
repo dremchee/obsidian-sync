@@ -57,53 +57,6 @@ export class SyncSettingsTab extends PluginSettingTab {
 
     addSection(t("settings.section_connection"));
 
-    new Setting(containerEl)
-      .setName(t("settings.language.name"))
-      .setDesc(t("settings.language.desc"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("auto", t("settings.language.auto"))
-          .addOption("en", t("settings.language.en"))
-          .addOption("ru", t("settings.language.ru"))
-          .setValue(this.plugin.settings.language)
-          .onChange(async (value) => {
-            this.plugin.settings.language = value as PluginLanguage;
-            await this.plugin.saveSettings();
-            this.display();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t("settings.enable_sync.name"))
-      .setDesc(t("settings.enable_sync.desc"))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.syncEnabled)
-          .onChange(async (value) => {
-            this.plugin.settings.syncEnabled = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    addSection(t("settings.section_startup"));
-
-    new Setting(containerEl)
-      .setName(t("settings.startup_mode.name"))
-      .setDesc(t("settings.startup_mode.desc"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("off", t("settings.startup_mode.off"))
-          .addOption("immediate", t("settings.startup_mode.immediate"))
-          .addOption("smooth", t("settings.startup_mode.smooth"))
-          .setValue(this.plugin.settings.startupMode)
-          .onChange(async (value) => {
-            this.plugin.setStartupMode(value as StartupSyncMode);
-            await this.plugin.saveSettings();
-          })
-      );
-
-    addSection(t("settings.section_server"));
-
     const serverUrlSetting = new Setting(containerEl)
       .setName(t("settings.server_url.name"))
       .setDesc(t("settings.server_url.desc"))
@@ -153,8 +106,6 @@ export class SyncSettingsTab extends PluginSettingTab {
       statusEl.style.color = statusColor;
       statusEl.style.fontWeight = "600";
       statusEl.style.fontSize = "12px";
-
-      const message = (this.plugin.serverConnectionMessage || t("settings.server.not_checked")).trim();
     }
 
     new Setting(containerEl)
@@ -171,31 +122,138 @@ export class SyncSettingsTab extends PluginSettingTab {
           });
       });
 
-    addSection(t("settings.section_performance"));
-
     new Setting(containerEl)
-      .setName(t("settings.api_key.name"))
-      .setDesc(t("settings.api_key.desc"))
+      .setName(t("settings.vault_name.name"))
+      .setDesc(t("settings.vault_name.desc"))
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.vaultName)
+          .onChange(async (value) => {
+            this.plugin.settings.vaultName = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    let passphraseInput: HTMLInputElement | null = null;
+    new Setting(containerEl)
+      .setName(t("settings.passphrase.name"))
+      .setDesc(t("settings.passphrase.desc"))
       .addText((text) => {
-        text.inputEl.type = "password";
+        passphraseInput = text.inputEl;
+        text.inputEl.type = this.passphraseVisible ? "text" : "password";
         return text
-          .setValue(maskSecret(this.plugin.settings.apiKey))
-          .setDisabled(true);
+          .setPlaceholder(t("settings.passphrase.placeholder"))
+          .setValue(this.plugin.settings.passphrase)
+          .onChange(async (value) => {
+            this.plugin.settings.passphrase = value;
+            await this.plugin.saveSettings();
+          });
       })
       .addExtraButton((button) => {
-        button
-          .setIcon("copy")
-          .setTooltip(t("settings.api_key.copy"))
-          .setDisabled(!this.plugin.settings.apiKey);
-
-        button.onClick(async () => {
-          await copyValue(this.plugin.settings.apiKey, t("settings.api_key.name"));
-          button.setIcon("check");
-          setTimeout(() => {
-            button.setIcon("copy");
-          }, 2000);
+        const applyIconAndTooltip = () => {
+          button.setIcon(this.passphraseVisible ? "eye-off" : "eye");
+          button.setTooltip(this.passphraseVisible ? t("settings.passphrase.hide") : t("settings.passphrase.show"));
+        };
+        applyIconAndTooltip();
+        button.onClick(() => {
+          this.passphraseVisible = !this.passphraseVisible;
+          if (passphraseInput) {
+            passphraseInput.type = this.passphraseVisible ? "text" : "password";
+          }
+          applyIconAndTooltip();
         });
       });
+
+    new Setting(containerEl)
+      .setName(t("settings.register_device.name"))
+      .setDesc(
+        this.plugin.isDeviceRevoked
+          ? t("settings.register_device.revoked_desc")
+          : t("settings.register_device.desc")
+      )
+      .addButton((button) => {
+        const isRegistered = this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked;
+
+        button.setDisabled(isRegistered);
+        button.setButtonText(
+          isRegistered
+            ? "Зарегистрировано"
+            : this.plugin.isDeviceRevoked
+              ? t("settings.register_device.button_reregister")
+              : t("settings.register_device.button")
+        );
+
+        if (!isRegistered) {
+          button.onClick(async () => {
+            button.setDisabled(true);
+            try {
+              const reg = await this.plugin.engine?.registerDevice();
+              if (reg) {
+                this.plugin.settings.apiKey = reg.apiKey;
+                this.plugin.settings.deviceId = reg.deviceId;
+                await this.plugin.saveSettings();
+                this.plugin.isDeviceRevoked = false;
+                this.plugin.revokedNoticeShown = false;
+                new Notice(t("notices.device_registered"));
+                this.display();
+              }
+            } catch (err) {
+              new Notice(t("notices.register_failed", { error: String(err) }));
+            } finally {
+              button.setDisabled(false);
+            }
+          });
+        }
+      });
+
+    addSection("Plugin");
+
+    new Setting(containerEl)
+      .setName(t("settings.language.name"))
+      .setDesc(t("settings.language.desc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("auto", t("settings.language.auto"))
+          .addOption("en", t("settings.language.en"))
+          .addOption("ru", t("settings.language.ru"))
+          .setValue(this.plugin.settings.language)
+          .onChange(async (value) => {
+            this.plugin.settings.language = value as PluginLanguage;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("settings.enable_sync.name"))
+      .setDesc(t("settings.enable_sync.desc"))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.syncEnabled)
+          .onChange(async (value) => {
+            this.plugin.settings.syncEnabled = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    addSection(t("settings.section_startup"));
+
+    new Setting(containerEl)
+      .setName(t("settings.startup_mode.name"))
+      .setDesc(t("settings.startup_mode.desc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("off", t("settings.startup_mode.off"))
+          .addOption("immediate", t("settings.startup_mode.immediate"))
+          .addOption("smooth", t("settings.startup_mode.smooth"))
+          .setValue(this.plugin.settings.startupMode)
+          .onChange(async (value) => {
+            this.plugin.setStartupMode(value as StartupSyncMode);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    addSection(t("settings.section_performance"));
 
     new Setting(containerEl)
       .setName(t("settings.interval_sec.name"))
@@ -298,36 +356,6 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
-    let passphraseInput: HTMLInputElement | null = null;
-    new Setting(containerEl)
-      .setName(t("settings.passphrase.name"))
-      .setDesc(t("settings.passphrase.desc"))
-      .addText((text) => {
-        passphraseInput = text.inputEl;
-        text.inputEl.type = this.passphraseVisible ? "text" : "password";
-        return text
-          .setPlaceholder(t("settings.passphrase.placeholder"))
-          .setValue(this.plugin.settings.passphrase)
-          .onChange(async (value) => {
-            this.plugin.settings.passphrase = value;
-            await this.plugin.saveSettings();
-          });
-      })
-      .addExtraButton((button) => {
-        const applyIconAndTooltip = () => {
-          button.setIcon(this.passphraseVisible ? "eye-off" : "eye");
-          button.setTooltip(this.passphraseVisible ? t("settings.passphrase.hide") : t("settings.passphrase.show"));
-        };
-        applyIconAndTooltip();
-        button.onClick(() => {
-          this.passphraseVisible = !this.passphraseVisible;
-          if (passphraseInput) {
-            passphraseInput.type = this.passphraseVisible ? "text" : "password";
-          }
-          applyIconAndTooltip();
-        });
-      });
-
     addSection(t("settings.section_device"));
 
     new Setting(containerEl)
@@ -354,58 +382,27 @@ export class SyncSettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName(t("settings.vault_name.name"))
-      .setDesc(t("settings.vault_name.desc"))
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.vaultName)
-          .onChange(async (value) => {
-            this.plugin.settings.vaultName = value.trim();
-            await this.plugin.saveSettings();
-          })
-      );
+      .setName(t("settings.api_key.name"))
+      .setDesc(t("settings.api_key.desc"))
+      .addText((text) => {
+        text.inputEl.type = "password";
+        return text
+          .setValue(maskSecret(this.plugin.settings.apiKey))
+          .setDisabled(true);
+      })
+      .addExtraButton((button) => {
+        button
+          .setIcon("copy")
+          .setTooltip(t("settings.api_key.copy"))
+          .setDisabled(!this.plugin.settings.apiKey);
 
-    new Setting(containerEl)
-      .setName(t("settings.register_device.name"))
-      .setDesc(
-        this.plugin.isDeviceRevoked
-          ? t("settings.register_device.revoked_desc")
-          : t("settings.register_device.desc")
-      )
-      .addButton((button) => {
-        const isRegistered = this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked;
-
-        button.setDisabled(isRegistered);
-        button.setButtonText(
-          isRegistered
-            ? "Зарегистрировано"
-            : this.plugin.isDeviceRevoked
-              ? t("settings.register_device.button_reregister")
-              : t("settings.register_device.button")
-        );
-
-        if (!isRegistered) {
-          button.onClick(async () => {
-            button.setDisabled(true);
-            try {
-              const reg = await this.plugin.engine?.registerDevice();
-              if (reg) {
-                this.plugin.settings.apiKey = reg.apiKey;
-                this.plugin.settings.deviceId = reg.deviceId;
-                await this.plugin.saveSettings();
-                this.plugin.isDeviceRevoked = false;
-                this.plugin.revokedNoticeShown = false;
-                new Notice(t("notices.device_registered"));
-                this.display();
-              }
-            } catch (err) {
-              new Notice(t("notices.register_failed", { error: String(err) }));
-            } finally {
-              button.setDisabled(false);
-            }
-          });
-        }
+        button.onClick(async () => {
+          await copyValue(this.plugin.settings.apiKey, t("settings.api_key.name"));
+          button.setIcon("check");
+          setTimeout(() => {
+            button.setIcon("copy");
+          }, 2000);
+        });
       });
-
   }
 }
