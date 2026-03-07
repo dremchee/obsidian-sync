@@ -1,11 +1,9 @@
 export type StartupSyncMode = "off" | "smooth" | "immediate";
-export type PluginLanguage = "auto" | "en" | "ru";
 
 export interface SyncSettings {
   syncEnabled: boolean;
   syncOnStartup: boolean;
   startupMode: StartupSyncMode;
-  language: PluginLanguage;
   serverUrl: string;
   authToken: string;
   apiKey: string;

@@ -10,7 +10,6 @@ const DEFAULT_SETTINGS: SyncSettings = {
   syncEnabled: true,
   syncOnStartup: true,
   startupMode: "smooth",
-  language: "auto",
   serverUrl: "http://127.0.0.1:3243",
   authToken: "",
   apiKey: "",
@@ -48,7 +47,7 @@ export default class CustomSyncPlugin extends Plugin {
   startupWarmupCyclesLeft = 0;
   persistTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   registerInProgress = false;
-  private readonly translator = createTranslator(() => this.settings.language);
+  private readonly translator = createTranslator();
 
   t = (key: string, params?: Record<string, string | number>) => this.translator(key, params);
 

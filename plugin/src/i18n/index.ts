@@ -1,22 +1,34 @@
-import type { PluginLanguage } from "../settings";
-import en from "./en";
-import ru from "./ru";
+import en from "./en.json";
+import ru from "./ru.json";
 
 type Params = Record<string, string | number>;
 
-const dictionaries = { en, ru } as const;
+const NAMESPACE = "vault-sync";
 
-type Locale = keyof typeof dictionaries;
+const resources: Record<string, Record<string, string>> = { en, ru };
 
-function detectLocale(): Locale {
-  const lang = String(globalThis.navigator?.language || "en").toLowerCase();
-  if (lang.startsWith("ru")) return "ru";
-  return "en";
+let initialized = false;
+
+interface I18next {
+  t: (key: string, opts?: Record<string, unknown>) => string;
+  language: string;
+  addResourceBundle?: (lng: string, ns: string, resources: Record<string, string>, deep?: boolean, overwrite?: boolean) => void;
 }
 
-function resolveLocale(language: PluginLanguage): Locale {
-  if (language === "auto") return detectLocale();
-  return language === "ru" ? "ru" : "en";
+function getI18next(): I18next | null {
+  return (globalThis as unknown as { i18next?: I18next }).i18next ?? null;
+}
+
+function ensureInit() {
+  if (initialized) return;
+  initialized = true;
+
+  const i18next = getI18next();
+  if (!i18next?.addResourceBundle) return;
+
+  for (const [lang, dict] of Object.entries(resources)) {
+    i18next.addResourceBundle(lang, NAMESPACE, dict, true, true);
+  }
 }
 
 function interpolate(template: string, params?: Params) {
@@ -24,12 +36,25 @@ function interpolate(template: string, params?: Params) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, k: string) => String(params[k] ?? ""));
 }
 
-export function createTranslator(getLanguage: () => PluginLanguage) {
+function fallbackTranslate(key: string, params?: Params): string {
+  const lang = getI18next()?.language?.slice(0, 2) || "en";
+  const dict = (resources[lang] || resources.en) as Record<string, string>;
+  const fallback = resources.en as Record<string, string>;
+  const value = dict[key] || fallback[key] || key;
+  return interpolate(value, params);
+}
+
+export function createTranslator() {
   return (key: string, params?: Params) => {
-    const locale = resolveLocale(getLanguage());
-    const dict = dictionaries[locale] as Record<string, string>;
-    const fallback = dictionaries.en as Record<string, string>;
-    const value = dict[key] || fallback[key] || key;
-    return interpolate(value, params);
+    ensureInit();
+
+    const i18next = getI18next();
+    if (i18next?.t) {
+      const nsKey = `${NAMESPACE}:${key}`;
+      const result = i18next.t(nsKey, params as Record<string, unknown>);
+      if (result !== nsKey && result !== key) return result;
+    }
+
+    return fallbackTranslate(key, params);
   };
 }

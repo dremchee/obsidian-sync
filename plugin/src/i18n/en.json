@@ -1,4 +1,4 @@
-const en = {
+{
   "commands.sync_now": "Vault Sync: Sync now",
   "commands.register_device": "Vault Sync: Register device",
 
@@ -33,12 +33,6 @@ const en = {
   "settings.section_reliability": "Reliability",
   "settings.section_security": "Security",
   "settings.section_device": "Device",
-
-  "settings.language.name": "Language",
-  "settings.language.desc": "UI language for this plugin.",
-  "settings.language.auto": "Auto",
-  "settings.language.en": "English",
-  "settings.language.ru": "Russian",
 
   "settings.enable_sync.name": "Enable sync",
   "settings.enable_sync.desc": "Turn automatic sync on/off. Manual sync command still works.",
@@ -105,6 +99,4 @@ const en = {
   "settings.register_device.revoked_desc": "Device key is revoked. Click Register to re-register this device.",
   "settings.register_device.button": "Register",
   "settings.register_device.button_reregister": "Re-register"
-} as const;
-
-export default en;
+}
