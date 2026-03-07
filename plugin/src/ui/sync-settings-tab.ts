@@ -182,14 +182,20 @@ export class SyncSettingsTab extends PluginSettingTab {
           .setValue(maskSecret(this.plugin.settings.apiKey))
           .setDisabled(true);
       })
-      .addButton((button) =>
+      .addExtraButton((button) => {
         button
-          .setButtonText(t("settings.api_key.copy"))
-          .setDisabled(!this.plugin.settings.apiKey)
-          .onClick(async () => {
-            await copyValue(this.plugin.settings.apiKey, t("settings.api_key.name"));
-          })
-      );
+          .setIcon("copy")
+          .setTooltip(t("settings.api_key.copy"))
+          .setDisabled(!this.plugin.settings.apiKey);
+
+        button.onClick(async () => {
+          await copyValue(this.plugin.settings.apiKey, t("settings.api_key.name"));
+          button.setIcon("check");
+          setTimeout(() => {
+            button.setIcon("copy");
+          }, 2000);
+        });
+      });
 
     new Setting(containerEl)
       .setName(t("settings.interval_sec.name"))
@@ -332,14 +338,20 @@ export class SyncSettingsTab extends PluginSettingTab {
           .setValue(this.plugin.settings.deviceId)
           .setDisabled(true)
       )
-      .addButton((button) =>
+      .addExtraButton((button) => {
         button
-          .setButtonText(t("settings.device_id.copy"))
-          .setDisabled(!this.plugin.settings.deviceId)
-          .onClick(async () => {
-            await copyValue(this.plugin.settings.deviceId, t("settings.device_id.name"));
-          })
-      );
+          .setIcon("copy")
+          .setTooltip(t("settings.device_id.copy"))
+          .setDisabled(!this.plugin.settings.deviceId);
+
+        button.onClick(async () => {
+          await copyValue(this.plugin.settings.deviceId, t("settings.device_id.name"));
+          button.setIcon("check");
+          setTimeout(() => {
+            button.setIcon("copy");
+          }, 2000);
+        });
+      });
 
     new Setting(containerEl)
       .setName(t("settings.vault_name.name"))
