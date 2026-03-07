@@ -1,6 +1,6 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, setIcon } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import type { SyncEngine } from "../sync/engine";
-import type { PluginLanguage, StartupSyncMode, SyncSettings } from "../settings";
+import type { StartupSyncMode, SyncSettings } from "../settings";
 
 export type ServerConnectionState = "unknown" | "ok" | "error";
 
@@ -172,7 +172,7 @@ export class SyncSettingsTab extends PluginSettingTab {
           : t("settings.register_device.desc")
       )
       .addButton((button) => {
-        const isRegistered = this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked;
+        const isRegistered = Boolean(this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked);
 
         button.setDisabled(isRegistered);
         button.setButtonText(
@@ -207,22 +207,6 @@ export class SyncSettingsTab extends PluginSettingTab {
       });
 
     addSection("Plugin");
-
-    new Setting(containerEl)
-      .setName(t("settings.language.name"))
-      .setDesc(t("settings.language.desc"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("auto", t("settings.language.auto"))
-          .addOption("en", t("settings.language.en"))
-          .addOption("ru", t("settings.language.ru"))
-          .setValue(this.plugin.settings.language)
-          .onChange(async (value) => {
-            this.plugin.settings.language = value as PluginLanguage;
-            await this.plugin.saveSettings();
-            this.display();
-          })
-      );
 
     new Setting(containerEl)
       .setName(t("settings.enable_sync.name"))
