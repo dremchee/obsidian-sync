@@ -6,12 +6,15 @@ import { and, eq, isNull } from "drizzle-orm";
 import { syncEventBus, type SyncEventPayload } from "#app/utils/event-bus";
 
 type PeerContext = {
+  authenticated: boolean;
   deviceId: string;
   vaultId: string;
   unsubscribe: (() => void) | null;
+  authTimer: ReturnType<typeof setTimeout> | null;
 };
 
 const peerContexts = new WeakMap<object, PeerContext>();
+const AUTH_TIMEOUT_MS = 5000;
 
 function authenticateToken(token: string) {
   if (!token) return null;
@@ -28,40 +31,58 @@ function authenticateToken(token: string) {
 
 export default defineWebSocketHandler({
   open(peer) {
-    const url = peer.request?.url || "";
-    const params = new URL(url, "http://localhost").searchParams;
-    const token = params.get("token") || "";
-
-    const device = authenticateToken(token);
-    if (!device) {
-      peer.send(JSON.stringify({ type: "error", message: "unauthorized" }));
-      peer.close(4001, "unauthorized");
-      return;
-    }
-
     const ctx: PeerContext = {
-      deviceId: device.id,
-      vaultId: device.vaultId,
-      unsubscribe: null
+      authenticated: false,
+      deviceId: "",
+      vaultId: "",
+      unsubscribe: null,
+      authTimer: setTimeout(() => {
+        peer.send(JSON.stringify({ type: "error", message: "auth_timeout" }));
+        peer.close(4001, "auth_timeout");
+      }, AUTH_TIMEOUT_MS)
     };
-
-    const unsubscribe = syncEventBus.subscribe(device.vaultId, (payload: SyncEventPayload) => {
-      if (payload.sourceDeviceId === ctx.deviceId) return;
-      peer.send(JSON.stringify({ type: "new_events" }));
-    });
-    ctx.unsubscribe = unsubscribe;
     peerContexts.set(peer, ctx);
-
-    peer.send(JSON.stringify({
-      type: "connected",
-      vaultId: device.vaultId,
-      deviceId: device.id
-    }));
   },
 
   message(peer, message) {
     try {
+      const ctx = peerContexts.get(peer);
+      if (!ctx) return;
       const data = JSON.parse(typeof message === "string" ? message : message.text());
+      if (data.type === "auth") {
+        const token = typeof data.token === "string" ? data.token : "";
+        const device = authenticateToken(token);
+        if (!device) {
+          peer.send(JSON.stringify({ type: "error", message: "unauthorized" }));
+          peer.close(4001, "unauthorized");
+          return;
+        }
+        if (ctx.authTimer) {
+          clearTimeout(ctx.authTimer);
+          ctx.authTimer = null;
+        }
+        ctx.authenticated = true;
+        ctx.deviceId = device.id;
+        ctx.vaultId = device.vaultId;
+        ctx.unsubscribe?.();
+        ctx.unsubscribe = syncEventBus.subscribe(device.vaultId, (payload: SyncEventPayload) => {
+          if (payload.sourceDeviceId === ctx.deviceId) return;
+          peer.send(JSON.stringify({ type: "new_events" }));
+        });
+        peer.send(JSON.stringify({
+          type: "connected",
+          vaultId: device.vaultId,
+          deviceId: device.id
+        }));
+        return;
+      }
+
+      if (!ctx.authenticated) {
+        peer.send(JSON.stringify({ type: "error", message: "unauthorized" }));
+        peer.close(4001, "unauthorized");
+        return;
+      }
+
       if (data.type === "ping") {
         peer.send(JSON.stringify({ type: "pong" }));
       }
@@ -72,6 +93,9 @@ export default defineWebSocketHandler({
 
   close(peer) {
     const ctx = peerContexts.get(peer);
+    if (ctx?.authTimer) {
+      clearTimeout(ctx.authTimer);
+    }
     if (ctx?.unsubscribe) {
       ctx.unsubscribe();
     }
@@ -80,6 +104,9 @@ export default defineWebSocketHandler({
 
   error(peer) {
     const ctx = peerContexts.get(peer);
+    if (ctx?.authTimer) {
+      clearTimeout(ctx.authTimer);
+    }
     if (ctx?.unsubscribe) {
       ctx.unsubscribe();
     }

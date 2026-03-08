@@ -49,7 +49,7 @@ export class SyncWebSocketClient {
     if (this.disposed) return;
 
     const base = this.opts.serverUrl.replace(/\/+$/, "").replace(/^http/, "ws");
-    const url = `${base}/api/v1/sync/ws?token=${encodeURIComponent(this.opts.apiKey)}`;
+    const url = `${base}/api/v1/sync/ws`;
 
     this.setState(this.reconnectAttempt > 0 ? "reconnecting" : "connecting");
     this.log(`ws connecting (attempt ${this.reconnectAttempt})`);
@@ -59,10 +59,11 @@ export class SyncWebSocketClient {
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
+      ws.send(JSON.stringify({ type: "auth", token: this.opts.apiKey }));
       this.reconnectAttempt = 0;
       this.setState("connected");
       this.startPing();
-      this.log("ws connected");
+      this.log("ws connected, auth sent");
     };
 
     ws.onmessage = (evt) => {
