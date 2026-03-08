@@ -2,12 +2,16 @@ import { App, TAbstractFile, TFile } from "obsidian";
 import type { BootstrapPolicy, SyncSettings } from "../settings";
 import { encryptBytes, utf8Encode } from "./crypto";
 import { EngineClient } from "./engine/client";
-import { SyncRunner } from "./engine/runner";
+import { ensureDirectory, ensureParentDirectory, readFileBytes, writeBinaryFile } from "./engine/file-io";
 import {
   markRemoteSuppressedPath,
-  SyncState,
+  shouldQueueLocalUpsert,
   shouldSuppressLocalEvent
-} from "./engine/state";
+} from "./engine/local-events";
+import { prunePendingFileOperations, pruneTrackedPaths } from "./engine/prune";
+import { runWithConcurrency, yieldToUi } from "./engine/runtime";
+import { SyncRunner } from "./engine/runner";
+import { SyncState } from "./engine/state";
 import {
   enqueueDelete,
   enqueueRename,
@@ -17,14 +21,14 @@ import type {
   EngineStateSnapshot,
   RunProfile
 } from "./engine/types";
-import { sha256Hex, toUint8Array } from "./engine/utils";
+import { sha256Hex } from "./engine/utils";
 
 export type { EngineStateSnapshot } from "./engine/types";
 
 export class SyncEngine {
-  private app: App;
-  private settings: SyncSettings;
-  private client: EngineClient;
+  private readonly app: App;
+  private readonly settings: SyncSettings;
+  private readonly client: EngineClient;
   private readonly state = new SyncState();
   private readonly runner: SyncRunner;
   private readonly defaultRunProfile: Required<RunProfile> = {
@@ -52,8 +56,8 @@ export class SyncEngine {
       saveConflictCopy: (file, conflictPath) => this.saveConflictCopy(file, conflictPath),
       isRecoverablePayloadError: (err) => this.isRecoverablePayloadError(err),
       readAndEncryptFile: (file) => this.readAndEncryptFile(file),
-      runWithConcurrency: (items, concurrency, worker) => this.runWithConcurrency(items, concurrency, worker),
-      yieldToUi: () => this.yieldToUi()
+      runWithConcurrency,
+      yieldToUi
     });
   }
 
@@ -126,21 +130,17 @@ export class SyncEngine {
 
   private async saveConflictCopy(file: TFile, conflictPath: string) {
     this.markRemoteSuppressedPath(conflictPath);
-    const parentDir = conflictPath.substring(0, conflictPath.lastIndexOf("/"));
-    if (parentDir) {
-      await this.ensureDirectory(parentDir);
-    }
+    await ensureParentDirectory(this.app.vault, conflictPath);
     try {
-      const content = toUint8Array(await this.app.vault.adapter.readBinary(file.path));
-      await this.app.vault.adapter.writeBinary(conflictPath, content);
+      const content = await readFileBytes(this.app.vault, file);
+      await writeBinaryFile(this.app.vault, conflictPath, content);
     } catch (err) {
       console.error(`[custom-sync] failed to save conflict copy ${conflictPath}: ${err}`);
     }
   }
 
   private async ensureDirectory(dirPath: string) {
-    if (await this.app.vault.adapter.exists(dirPath)) return;
-    await this.app.vault.adapter.mkdir(dirPath);
+    await ensureDirectory(this.app.vault, dirPath);
   }
 
   private isRecoverablePayloadError(err: unknown): boolean {
@@ -149,33 +149,11 @@ export class SyncEngine {
   }
 
   private async readAndEncryptFile(file: TFile) {
-    const raw = toUint8Array(await this.app.vault.adapter.readBinary(file.path));
+    const raw = await readFileBytes(this.app.vault, file);
     const encrypted = await encryptBytes(this.settings.passphrase, raw);
     const bytes = utf8Encode(JSON.stringify(encrypted));
     const hash = await sha256Hex(bytes);
     return { hash, bytes };
-  }
-
-  private async runWithConcurrency<T>(
-    items: T[],
-    concurrency: number,
-    worker: (item: T, index: number) => Promise<void>
-  ) {
-    if (!items.length) return;
-    let index = 0;
-    const workers = Array.from({ length: Math.max(1, concurrency) }, async () => {
-      while (true) {
-        const current = index;
-        index += 1;
-        if (current >= items.length) return;
-        await worker(items[current], current);
-      }
-    });
-    await Promise.all(workers);
-  }
-
-  private async yieldToUi() {
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
   }
 
   private debugPerf(message: string) {
@@ -184,38 +162,10 @@ export class SyncEngine {
   }
 
   private pruneFolderTrackedState() {
-    this.state.pendingOperations = this.state.pendingOperations.filter((op) => {
-      const pathNode = this.app.vault.getAbstractFileByPath(op.path);
-      if (pathNode instanceof TAbstractFile && !(pathNode instanceof TFile)) {
-        return false;
-      }
-      const prevNode = op.prevPath ? this.app.vault.getAbstractFileByPath(op.prevPath) : null;
-      if (prevNode instanceof TAbstractFile && !(prevNode instanceof TFile)) {
-        return false;
-      }
-      return true;
-    });
-
-    for (const path of Array.from(this.state.headRevisionByPath.keys())) {
-      const node = this.app.vault.getAbstractFileByPath(path);
-      if (node instanceof TAbstractFile && !(node instanceof TFile)) {
-        this.state.headRevisionByPath.delete(path);
-      }
-    }
-
-    for (const path of Array.from(this.state.pushedMtime.keys())) {
-      const node = this.app.vault.getAbstractFileByPath(path);
-      if (node instanceof TAbstractFile && !(node instanceof TFile)) {
-        this.state.pushedMtime.delete(path);
-      }
-    }
-
-    for (const path of Array.from(this.state.bootstrapLocalPaths.values())) {
-      const node = this.app.vault.getAbstractFileByPath(path);
-      if (node instanceof TAbstractFile && !(node instanceof TFile)) {
-        this.state.bootstrapLocalPaths.delete(path);
-      }
-    }
+    this.state.pendingOperations = prunePendingFileOperations(this.app.vault, this.state.pendingOperations);
+    pruneTrackedPaths(this.state.headRevisionByPath, this.app.vault);
+    pruneTrackedPaths(this.state.pushedMtime, this.app.vault);
+    pruneTrackedPaths(this.state.bootstrapLocalPaths, this.app.vault);
   }
 
   shouldSuppressLocalEvent(path: string): boolean {
@@ -223,18 +173,7 @@ export class SyncEngine {
   }
 
   shouldQueueLocalUpsert(file?: TAbstractFile | null): boolean {
-    if (!file?.path) return false;
-    if (this.shouldSuppressLocalEvent(file.path)) {
-      return false;
-    }
-    if (!(file instanceof TFile)) {
-      return true;
-    }
-    const knownMtime = this.state.pushedMtime.get(file.path);
-    if (knownMtime !== undefined && file.stat.mtime <= knownMtime) {
-      return false;
-    }
-    return true;
+    return shouldQueueLocalUpsert(this.state.remoteWriteSuppressUntil, this.state.pushedMtime, file);
   }
 
   private markRemoteSuppressedPath(path: string) {

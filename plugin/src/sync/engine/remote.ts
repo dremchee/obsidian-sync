@@ -5,7 +5,7 @@ import { makeConflictPath } from "../conflicts";
 import { dropScanOperationsForPaths, enqueueUpsert, hasPendingOperationForPath } from "./queue";
 import type { SyncState } from "./state";
 import type { PendingLocalOperation, PullEvent } from "./types";
-import { byteArraysEqual, normalizePath, toUint8Array } from "./utils";
+import { byteArraysEqual, normalizePath, toArrayBuffer, toUint8Array } from "./utils";
 
 export type RemoteContext = {
   app: App;
@@ -272,7 +272,7 @@ async function applyRemoteUpsert(
   if (parentDir) {
     await ctx.ensureDirectory(parentDir);
   }
-  await ctx.app.vault.adapter.writeBinary(evt.path, plainBytes);
+  await ctx.app.vault.adapter.writeBinary(evt.path, toArrayBuffer(plainBytes));
 
   const stat = await ctx.app.vault.adapter.stat(evt.path);
   if (stat) {

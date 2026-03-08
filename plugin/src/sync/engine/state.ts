@@ -192,18 +192,3 @@ export class SyncState {
     }
   }
 }
-
-export function markRemoteSuppressedPath(remoteWriteSuppressUntil: Map<string, number>, path: string) {
-  const normalizedPath = normalizePath(path);
-  if (!normalizedPath) return;
-  remoteWriteSuppressUntil.set(normalizedPath, Date.now() + 5000);
-}
-
-export function shouldSuppressLocalEvent(remoteWriteSuppressUntil: Map<string, number>, path: string) {
-  const normalizedPath = normalizePath(path);
-  const until = remoteWriteSuppressUntil.get(normalizedPath);
-  if (!until) return false;
-  if (Date.now() <= until) return true;
-  remoteWriteSuppressUntil.delete(normalizedPath);
-  return false;
-}

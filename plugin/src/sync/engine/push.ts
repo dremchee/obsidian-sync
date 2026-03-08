@@ -2,7 +2,7 @@ import { TFile, type App } from "obsidian";
 import { enqueueUpsert } from "./queue";
 import type { SyncState } from "./state";
 import type { PendingLocalOperation, PushRequestOperation, PushResult } from "./types";
-import { normalizePath, toUint8Array } from "./utils";
+import { normalizePath, toArrayBuffer, toUint8Array } from "./utils";
 
 export type PushContext = {
   app: App;
@@ -131,7 +131,7 @@ async function handlePushConflict(
     } catch {
       try {
         const content = toUint8Array(await ctx.app.vault.adapter.readBinary(file.path));
-        await ctx.app.vault.adapter.writeBinary(conflictPath, content);
+        await ctx.app.vault.adapter.writeBinary(conflictPath, toArrayBuffer(content));
         ctx.debugPerf(`conflict: copied ${sourcePath} -> ${conflictPath}`);
       } catch (copyErr) {
         console.error(`[custom-sync] failed to create conflict copy: ${copyErr}`);
