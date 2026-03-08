@@ -1,4 +1,4 @@
-import { Notice, Plugin, TAbstractFile, requestUrl } from "obsidian";
+import { Notice, Plugin, TAbstractFile, TFile, TFolder, requestUrl } from "obsidian";
 import { SyncEngine, type EngineStateSnapshot } from "./src/sync/engine";
 import { SyncWebSocketClient, type WsConnectionState } from "./src/sync/ws-client";
 import type { StartupSyncMode, SyncSettings } from "./src/settings";
@@ -215,7 +215,10 @@ export default class CustomSyncPlugin extends Plugin {
   }
 
   private markDirtyAndSchedule(file?: TAbstractFile) {
-    if (file?.path && this.engine?.shouldSuppressLocalEvent(file.path)) {
+    if (!(file instanceof TFile)) {
+      return;
+    }
+    if (!this.engine?.shouldQueueLocalUpsert(file)) {
       return;
     }
     if (file?.path) {
@@ -228,6 +231,9 @@ export default class CustomSyncPlugin extends Plugin {
   }
 
   private markDeleteAndSchedule(file?: TAbstractFile) {
+    if (!(file instanceof TFile)) {
+      return;
+    }
     if (file?.path && this.engine?.shouldSuppressLocalEvent(file.path)) {
       return;
     }
@@ -241,6 +247,13 @@ export default class CustomSyncPlugin extends Plugin {
   }
 
   private markRenameAndSchedule(file?: TAbstractFile, oldPath?: string) {
+    if (file instanceof TFolder) {
+      this.markFolderRenameAndSchedule(file, oldPath);
+      return;
+    }
+    if (!(file instanceof TFile)) {
+      return;
+    }
     const nextPath = file?.path || "";
     const prevPath = oldPath || "";
     if ((prevPath && this.engine?.shouldSuppressLocalEvent(prevPath)) || (nextPath && this.engine?.shouldSuppressLocalEvent(nextPath))) {
@@ -251,6 +264,37 @@ export default class CustomSyncPlugin extends Plugin {
     } else if (nextPath) {
       this.engine?.markDirty(nextPath);
     }
+    this.pendingSync = true;
+    this.updateStatusBar();
+    this.scheduleSync();
+    this.schedulePersist();
+  }
+
+  private markFolderRenameAndSchedule(folder: TFolder, oldPath?: string) {
+    const prevRoot = String(oldPath || "").replace(/\/+$/, "");
+    const nextRoot = folder.path.replace(/\/+$/, "");
+    if (!prevRoot || !nextRoot || prevRoot === nextRoot) {
+      return;
+    }
+
+    let changed = false;
+    for (const file of this.app.vault.getFiles()) {
+      if (!(file.path === nextRoot || file.path.startsWith(`${nextRoot}/`))) {
+        continue;
+      }
+      const suffix = file.path.slice(nextRoot.length);
+      const prevPath = `${prevRoot}${suffix}`;
+      if (this.engine?.shouldSuppressLocalEvent(prevPath) || this.engine?.shouldSuppressLocalEvent(file.path)) {
+        continue;
+      }
+      this.engine?.markFileRenamed(prevPath, file.path);
+      changed = true;
+    }
+
+    if (!changed) {
+      return;
+    }
+
     this.pendingSync = true;
     this.updateStatusBar();
     this.scheduleSync();

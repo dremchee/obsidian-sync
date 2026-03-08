@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import { App, TAbstractFile, TFile } from "obsidian";
 import type { SyncSettings } from "../settings";
 import { encryptBytes, utf8Encode } from "./crypto";
 import { EngineClient } from "./engine/client";
@@ -113,6 +113,7 @@ export class SyncEngine {
 
   applyStateSnapshot(snapshot: Partial<EngineStateSnapshot> | null | undefined) {
     this.state.applySnapshot(snapshot);
+    this.pruneFolderTrackedState();
   }
 
   getStateSnapshot(): EngineStateSnapshot {
@@ -178,8 +179,51 @@ export class SyncEngine {
     console.debug(`[custom-sync][perf] ${message}`);
   }
 
+  private pruneFolderTrackedState() {
+    this.state.pendingOperations = this.state.pendingOperations.filter((op) => {
+      const pathNode = this.app.vault.getAbstractFileByPath(op.path);
+      if (pathNode instanceof TAbstractFile && !(pathNode instanceof TFile)) {
+        return false;
+      }
+      const prevNode = op.prevPath ? this.app.vault.getAbstractFileByPath(op.prevPath) : null;
+      if (prevNode instanceof TAbstractFile && !(prevNode instanceof TFile)) {
+        return false;
+      }
+      return true;
+    });
+
+    for (const path of Array.from(this.state.headRevisionByPath.keys())) {
+      const node = this.app.vault.getAbstractFileByPath(path);
+      if (node instanceof TAbstractFile && !(node instanceof TFile)) {
+        this.state.headRevisionByPath.delete(path);
+      }
+    }
+
+    for (const path of Array.from(this.state.pushedMtime.keys())) {
+      const node = this.app.vault.getAbstractFileByPath(path);
+      if (node instanceof TAbstractFile && !(node instanceof TFile)) {
+        this.state.pushedMtime.delete(path);
+      }
+    }
+  }
+
   shouldSuppressLocalEvent(path: string): boolean {
     return shouldSuppressLocalEvent(this.state.remoteWriteSuppressUntil, path);
+  }
+
+  shouldQueueLocalUpsert(file?: TAbstractFile | null): boolean {
+    if (!file?.path) return false;
+    if (this.shouldSuppressLocalEvent(file.path)) {
+      return false;
+    }
+    if (!(file instanceof TFile)) {
+      return true;
+    }
+    const knownMtime = this.state.pushedMtime.get(file.path);
+    if (knownMtime !== undefined && file.stat.mtime <= knownMtime) {
+      return false;
+    }
+    return true;
   }
 
   private markRemoteSuppressedPath(path: string) {

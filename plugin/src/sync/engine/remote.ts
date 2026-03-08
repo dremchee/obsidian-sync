@@ -32,6 +32,31 @@ export async function applyRemoteEvent(
   return applyRemoteUpsert(ctx, evt, prefetchedBlobs);
 }
 
+function dropStaleEventUpsertsForPaths(
+  app: App,
+  pendingOperations: PendingLocalOperation[],
+  pushedMtime: Map<string, number>,
+  paths: Array<string | null | undefined>
+) {
+  const normalizedPaths = new Set(paths.map((path) => normalizePath(path)).filter(Boolean));
+  if (!normalizedPaths.size) return pendingOperations;
+
+  return pendingOperations.filter((op) => {
+    if (op.source !== "event" || op.op !== "upsert" || !normalizedPaths.has(op.path)) {
+      return true;
+    }
+    const file = app.vault.getAbstractFileByPath(op.path);
+    if (!(file instanceof TFile)) {
+      return false;
+    }
+    const knownMtime = pushedMtime.get(op.path);
+    if (knownMtime === undefined) {
+      return true;
+    }
+    return file.stat.mtime !== knownMtime;
+  });
+}
+
 function requeueConflictPath(
   pendingOperations: PendingLocalOperation[],
   pushedMtime: Map<string, number>,
@@ -51,6 +76,12 @@ function requeueConflictPath(
 async function applyRemoteDelete(ctx: RemoteContext, evt: PullEvent) {
   let wasConflict = false;
   ctx.state.pendingOperations = dropScanOperationsForPaths(ctx.state.pendingOperations, [evt.path]);
+  ctx.state.pendingOperations = dropStaleEventUpsertsForPaths(
+    ctx.app,
+    ctx.state.pendingOperations,
+    ctx.state.pushedMtime,
+    [evt.path]
+  );
   if (hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false })) {
     const f = ctx.app.vault.getAbstractFileByPath(evt.path);
     if (f instanceof TFile) {
@@ -82,6 +113,12 @@ async function applyRemoteRename(ctx: RemoteContext, evt: PullEvent) {
 
   let wasConflict = false;
   ctx.state.pendingOperations = dropScanOperationsForPaths(ctx.state.pendingOperations, [prevPath, evt.path]);
+  ctx.state.pendingOperations = dropStaleEventUpsertsForPaths(
+    ctx.app,
+    ctx.state.pendingOperations,
+    ctx.state.pushedMtime,
+    [prevPath, evt.path]
+  );
   if (
     hasPendingOperationForPath(ctx.state.pendingOperations, prevPath, { includeScan: false }) ||
     hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false })
@@ -136,6 +173,12 @@ async function applyRemoteUpsert(
   }
 
   ctx.state.pendingOperations = dropScanOperationsForPaths(ctx.state.pendingOperations, [evt.path]);
+  ctx.state.pendingOperations = dropStaleEventUpsertsForPaths(
+    ctx.app,
+    ctx.state.pendingOperations,
+    ctx.state.pushedMtime,
+    [evt.path]
+  );
   const raw = prefetchedBlobs?.get(evt.blobHash) || await ctx.downloadBlob(evt.blobHash);
   let envelope: { salt: string; iv: string; ciphertext: string };
   try {
@@ -152,6 +195,12 @@ async function applyRemoteUpsert(
   if (existing instanceof TFile) {
     const currentText = await ctx.app.vault.cachedRead(existing);
     if (currentText === text) {
+      ctx.state.pendingOperations = dropStaleEventUpsertsForPaths(
+        ctx.app,
+        ctx.state.pendingOperations,
+        ctx.state.pushedMtime,
+        [evt.path]
+      );
       ctx.state.pushedMtime.set(existing.path, existing.stat.mtime);
       return { pendingOperations: ctx.state.pendingOperations, wasConflict: false };
     }
