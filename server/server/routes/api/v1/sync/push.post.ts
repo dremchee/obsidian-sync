@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
         if (!op.blobHash || typeof op.size !== "number") {
           throw createError({ statusCode: 400, statusMessage: "upsert requires blobHash and size" });
         }
-        if (!hasBlob(op.blobHash)) {
+        if (!(await hasBlob(op.blobHash))) {
           logWarn("sync.push.blob_missing", {
             vaultId: requester.vaultId,
             deviceId: requester.deviceId,

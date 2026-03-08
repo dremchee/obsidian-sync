@@ -7,9 +7,9 @@ export default defineTask({
     name: "data-retention",
     description: "Purge old revisions, events, conflicts, sync operations, and orphan blobs"
   },
-  run() {
+  async run() {
     try {
-      const stats = runDataRetention();
+      const stats = await runDataRetention();
       logInfo("data.retention.done", stats);
       return { result: stats };
     } catch (error) {

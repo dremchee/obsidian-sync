@@ -9,11 +9,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Invalid hash" });
   }
 
-  if (!hasBlob(hash)) {
+  if (!(await hasBlob(hash))) {
     throw createError({ statusCode: 404, statusMessage: "Blob not found" });
   }
 
-  const payload = readBlob(hash);
+  const payload = await readBlob(hash);
   setHeader(event, "content-type", "application/octet-stream");
   setHeader(event, "content-length", payload.length);
   return payload;

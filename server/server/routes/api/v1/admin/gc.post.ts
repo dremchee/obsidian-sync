@@ -19,13 +19,13 @@ export default defineEventHandler(async (event) => {
     const dryRun = Boolean(body?.dryRun);
 
     const set = new Set(getReferencedBlobHashes());
-    const all = listAllBlobs();
+    const all = await listAllBlobs();
     const orphans = all.filter((h) => !set.has(h));
 
     let deleted = 0;
     if (!dryRun) {
       for (const hash of orphans) {
-        if (deleteBlob(hash)) {
+        if (await deleteBlob(hash)) {
           deleted += 1;
         }
       }

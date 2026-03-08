@@ -27,11 +27,11 @@ export default defineEventHandler(async (event) => {
   const items: Array<{ hash: string; dataBase64: string }> = [];
   const missing: string[] = [];
   for (const hash of normalized) {
-    if (!hasBlob(hash)) {
+    if (!(await hasBlob(hash))) {
       missing.push(hash);
       continue;
     }
-    const payload = readBlob(hash);
+    const payload = await readBlob(hash);
     items.push({ hash, dataBase64: payload.toString("base64") });
   }
 

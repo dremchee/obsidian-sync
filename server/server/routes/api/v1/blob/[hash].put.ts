@@ -19,6 +19,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Hash mismatch: expected ${hash}, got ${actual}` });
   }
 
-  putBlob(hash, raw);
+  await putBlob(hash, raw);
   return { ok: true, hash, size: raw.length };
 });

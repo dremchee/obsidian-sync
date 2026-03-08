@@ -109,7 +109,7 @@ function purgeOldRevisions(cutoffMs: number): number {
   return result.changes;
 }
 
-function purgeOrphanBlobs(): number {
+async function purgeOrphanBlobs(): Promise<number> {
   const db = getOrmDb();
   const referenced = new Set(
     db
@@ -120,17 +120,17 @@ function purgeOrphanBlobs(): number {
       .map((r) => r.blobHash!)
   );
 
-  const all = listAllBlobs();
+  const all = await listAllBlobs();
   let deleted = 0;
   for (const hash of all) {
     if (!referenced.has(hash)) {
-      if (deleteBlob(hash)) deleted += 1;
+      if (await deleteBlob(hash)) deleted += 1;
     }
   }
   return deleted;
 }
 
-export function runDataRetention(): RetentionStats {
+export async function runDataRetention(): Promise<RetentionStats> {
   const days = retentionDays();
   const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
 
@@ -138,7 +138,7 @@ export function runDataRetention(): RetentionStats {
   const conflictsDeleted = purgeConflicts(cutoffMs);
   const eventsDeleted = purgeSyncedEvents();
   const revisionsDeleted = purgeOldRevisions(cutoffMs);
-  const blobsDeleted = purgeOrphanBlobs();
+  const blobsDeleted = await purgeOrphanBlobs();
 
   return {
     days,

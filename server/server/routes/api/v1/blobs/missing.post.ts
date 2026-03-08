@@ -22,6 +22,11 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const missing = uniq.filter((hash) => !hasBlob(hash));
+  const missing: string[] = [];
+  for (const hash of uniq) {
+    if (!(await hasBlob(hash))) {
+      missing.push(hash);
+    }
+  }
   return { missing };
 });

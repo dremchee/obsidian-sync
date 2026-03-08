@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { resolveDataPaths } from "#app/utils/paths";
@@ -13,40 +13,45 @@ export function blobPath(hash: string) {
   return p;
 }
 
-export function hasBlob(hash: string) {
-  return fs.existsSync(blobPath(hash));
+export async function hasBlob(hash: string) {
+  try {
+    await fs.access(blobPath(hash));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-export function putBlob(hash: string, payload: Buffer) {
+export async function putBlob(hash: string, payload: Buffer) {
   const p = blobPath(hash);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  if (!fs.existsSync(p)) {
-    fs.writeFileSync(p, payload);
+  await fs.mkdir(path.dirname(p), { recursive: true });
+  if (!(await hasBlob(hash))) {
+    await fs.writeFile(p, payload);
   }
   return p;
 }
 
-export function readBlob(hash: string) {
+export async function readBlob(hash: string) {
   const p = blobPath(hash);
-  return fs.readFileSync(p);
+  return fs.readFile(p);
 }
 
-export function listAllBlobs() {
+export async function listAllBlobs() {
   const { blobsPath } = resolveDataPaths();
   const out: string[] = [];
 
-  if (!fs.existsSync(blobsPath)) {
+  if (!(await hasDirectory(blobsPath))) {
     return out;
   }
 
-  const first = fs.readdirSync(blobsPath);
+  const first = await fs.readdir(blobsPath);
   for (const a of first) {
     const p1 = path.join(blobsPath, a);
-    if (!fs.statSync(p1).isDirectory()) continue;
-    for (const b of fs.readdirSync(p1)) {
+    if (!(await isDirectory(p1))) continue;
+    for (const b of await fs.readdir(p1)) {
       const p2 = path.join(p1, b);
-      if (!fs.statSync(p2).isDirectory()) continue;
-      for (const f of fs.readdirSync(p2)) {
+      if (!(await isDirectory(p2))) continue;
+      for (const f of await fs.readdir(p2)) {
         if (f.endsWith(".bin") && f.length > 4) {
           out.push(f.slice(0, -4));
         }
@@ -57,11 +62,29 @@ export function listAllBlobs() {
   return out;
 }
 
-export function deleteBlob(hash: string) {
+export async function deleteBlob(hash: string) {
   const p = blobPath(hash);
-  if (fs.existsSync(p)) {
-    fs.unlinkSync(p);
+  if (await hasBlob(hash)) {
+    await fs.unlink(p);
     return true;
   }
   return false;
+}
+
+async function hasDirectory(dirPath: string) {
+  try {
+    const stat = await fs.stat(dirPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function isDirectory(dirPath: string) {
+  try {
+    const stat = await fs.stat(dirPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
 }
