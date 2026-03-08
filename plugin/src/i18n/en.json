@@ -9,6 +9,8 @@
   "notices.sync_disabled_revoked": "Sync disabled: device API key is invalid/revoked. Re-register device in plugin settings.",
   "notices.server_url_empty": "Server URL is empty.",
   "notices.auth_token_missing": "Auth token is required for automatic device registration.",
+  "notices.vault_name_required": "Vault name is required before registering a device.",
+  "notices.passphrase_required": "Passphrase is required before registering a device.",
   "notices.connection_failed": "Connection failed: {{error}}",
   "notices.connection_ok": "Connection OK: {{status}}",
   "notices.copied": "{{value}} copied",

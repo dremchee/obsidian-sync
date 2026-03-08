@@ -9,6 +9,8 @@
   "notices.sync_disabled_revoked": "Синхронизация отключена: ключ устройства недействителен/отозван. Перерегистрируйте устройство в настройках плагина.",
   "notices.server_url_empty": "Адрес сервера пустой.",
   "notices.auth_token_missing": "Для автоматической регистрации устройства нужен auth token.",
+  "notices.vault_name_required": "Для регистрации устройства необходимо указать название хранилища.",
+  "notices.passphrase_required": "Для регистрации устройства необходимо указать кодовую фразу.",
   "notices.connection_failed": "Ошибка подключения: {{error}}",
   "notices.connection_ok": "Подключение OK: {{status}}",
   "notices.copied": "{{value}} скопировано",
