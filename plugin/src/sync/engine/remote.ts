@@ -1,11 +1,11 @@
 import { TFile, type App } from "obsidian";
 import type { SyncSettings } from "../../settings";
-import { decryptBytes, utf8Decode } from "../crypto";
+import { decryptBytes } from "../crypto";
 import { makeConflictPath } from "../conflicts";
 import { dropScanOperationsForPaths, enqueueUpsert, hasPendingOperationForPath } from "./queue";
 import type { SyncState } from "./state";
 import type { PendingLocalOperation, PullEvent } from "./types";
-import { normalizePath } from "./utils";
+import { byteArraysEqual, normalizePath, toUint8Array } from "./utils";
 
 export type RemoteContext = {
   app: App;
@@ -224,13 +224,13 @@ async function applyRemoteUpsert(
   }
   const plain = await decryptBytes(ctx.settings.passphrase, envelope);
 
-  const text = utf8Decode(plain);
+  const plainBytes = toUint8Array(plain);
   const existing = ctx.app.vault.getAbstractFileByPath(evt.path);
   let wasConflict = false;
 
   if (existing instanceof TFile) {
-    const currentText = await ctx.app.vault.cachedRead(existing);
-    if (currentText === text) {
+    const currentBytes = toUint8Array(await ctx.app.vault.adapter.readBinary(existing.path));
+    if (byteArraysEqual(currentBytes, plainBytes)) {
       ctx.state.pendingOperations = dropStaleEventUpsertsForPaths(
         ctx.app,
         ctx.state.pendingOperations,
@@ -272,7 +272,7 @@ async function applyRemoteUpsert(
   if (parentDir) {
     await ctx.ensureDirectory(parentDir);
   }
-  await ctx.app.vault.adapter.write(evt.path, text);
+  await ctx.app.vault.adapter.writeBinary(evt.path, plainBytes);
 
   const stat = await ctx.app.vault.adapter.stat(evt.path);
   if (stat) {

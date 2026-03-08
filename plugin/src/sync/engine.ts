@@ -17,7 +17,7 @@ import type {
   EngineStateSnapshot,
   RunProfile
 } from "./engine/types";
-import { sha256Hex } from "./engine/utils";
+import { sha256Hex, toUint8Array } from "./engine/utils";
 
 export type { EngineStateSnapshot } from "./engine/types";
 
@@ -131,8 +131,8 @@ export class SyncEngine {
       await this.ensureDirectory(parentDir);
     }
     try {
-      const content = await this.app.vault.cachedRead(file);
-      await this.app.vault.adapter.write(conflictPath, content);
+      const content = toUint8Array(await this.app.vault.adapter.readBinary(file.path));
+      await this.app.vault.adapter.writeBinary(conflictPath, content);
     } catch (err) {
       console.error(`[custom-sync] failed to save conflict copy ${conflictPath}: ${err}`);
     }
@@ -149,8 +149,8 @@ export class SyncEngine {
   }
 
   private async readAndEncryptFile(file: TFile) {
-    const text = await this.app.vault.cachedRead(file);
-    const encrypted = await encryptBytes(this.settings.passphrase, utf8Encode(text));
+    const raw = toUint8Array(await this.app.vault.adapter.readBinary(file.path));
+    const encrypted = await encryptBytes(this.settings.passphrase, raw);
     const bytes = utf8Encode(JSON.stringify(encrypted));
     const hash = await sha256Hex(bytes);
     return { hash, bytes };
