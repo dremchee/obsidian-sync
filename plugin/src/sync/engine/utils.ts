@@ -1,3 +1,5 @@
+import { normalizeSyncPath } from "../../../../shared/path";
+
 export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
@@ -21,7 +23,7 @@ export async function sha256Hex(bytes: Uint8Array) {
 }
 
 export function normalizePath(path: string | null | undefined): string {
-  return String(path || "").replaceAll("\\", "/").replace(/^\/+/, "");
+  return normalizeSyncPath(path);
 }
 
 export function newOperationId() {

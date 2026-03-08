@@ -4,6 +4,7 @@ import { conflicts, events, fileRevisions, files, syncOperations } from "#app/db
 import { getOrmDb } from "#app/utils/db";
 import { newId } from "#app/utils/auth";
 import { syncEventBus } from "#app/utils/event-bus";
+import { normalizeSyncPath } from "../../../shared/path";
 
 export type PushOperation = {
   operationId?: string;
@@ -15,10 +16,6 @@ export type PushOperation = {
   clientTs?: number;
   baseRevisionId?: string;
 };
-
-function normalizePath(p: string) {
-  return p.replaceAll("\\", "/").replace(/^\/+/, "");
-}
 
 function makeConflictPath(originalPath: string, deviceId: string, ts: number): string {
   const d = new Date(ts);
@@ -248,7 +245,7 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
 
       const ts = raw.clientTs || Date.now();
       const op = raw.op;
-      const p = normalizePath(raw.path);
+      const p = normalizeSyncPath(raw.path);
       const setOpResult = (data: {
         status: OpResultStatus;
         revisionId?: string;
@@ -268,7 +265,7 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
       };
 
       if (op === "rename") {
-        const from = normalizePath(raw.prevPath || "");
+        const from = normalizeSyncPath(raw.prevPath || "");
         if (!from || !p) {
           setOpResult({ status: "ignored" });
           results.push({ operationId: opId, status: "ignored" });
