@@ -32,22 +32,6 @@ export class SyncSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const t = this.plugin.t;
-    const maskSecret = (value: string) => {
-      if (!value) return "";
-      if (value.length <= 4) return "*".repeat(value.length);
-      return `${"*".repeat(Math.max(8, value.length - 4))}${value.slice(-4)}`;
-    };
-    const copyValue = async (value: string, valueLabel: string) => {
-      if (!value) {
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(value);
-        new Notice(t("notices.copied", { value: valueLabel }));
-      } catch (error) {
-        new Notice(t("notices.copy_failed", { error: String(error) }));
-      }
-    };
     const addSection = (title: string, desc?: string) => {
       containerEl.createEl("h3", { text: title });
       if (desc) {
@@ -185,6 +169,14 @@ export class SyncSettingsTab extends PluginSettingTab {
 
         if (!isRegistered) {
           button.onClick(async () => {
+            if (!this.plugin.settings.vaultName) {
+              new Notice(t("notices.vault_name_required"));
+              return;
+            }
+            if (!this.plugin.settings.passphrase) {
+              new Notice(t("notices.passphrase_required"));
+              return;
+            }
             button.setDisabled(true);
             try {
               const reg = await this.plugin.engine?.registerDevice();
@@ -329,17 +321,6 @@ export class SyncSettingsTab extends PluginSettingTab {
           })
       );
 
-    addSection(t("settings.section_security"));
-
-    new Setting(containerEl)
-      .setName(t("settings.lww_policy.name"))
-      .setDesc(t("settings.lww_policy.desc"))
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.lwwPolicy)
-          .setDisabled(true)
-      );
-
     new Setting(containerEl)
       .setName(t("settings.debug_perf.name"))
       .setDesc(t("settings.debug_perf.desc"))
@@ -351,54 +332,5 @@ export class SyncSettingsTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
-
-    addSection(t("settings.section_device"));
-
-    new Setting(containerEl)
-      .setName(t("settings.device_id.name"))
-      .setDesc(t("settings.device_id.desc"))
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.deviceId)
-          .setDisabled(true)
-      )
-      .addExtraButton((button) => {
-        button
-          .setIcon("copy")
-          .setTooltip(t("settings.device_id.copy"))
-          .setDisabled(!this.plugin.settings.deviceId);
-
-        button.onClick(async () => {
-          await copyValue(this.plugin.settings.deviceId, t("settings.device_id.name"));
-          button.setIcon("check");
-          setTimeout(() => {
-            button.setIcon("copy");
-          }, 2000);
-        });
-      });
-
-    new Setting(containerEl)
-      .setName(t("settings.api_key.name"))
-      .setDesc(t("settings.api_key.desc"))
-      .addText((text) => {
-        text.inputEl.type = "password";
-        return text
-          .setValue(maskSecret(this.plugin.settings.apiKey))
-          .setDisabled(true);
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon("copy")
-          .setTooltip(t("settings.api_key.copy"))
-          .setDisabled(!this.plugin.settings.apiKey);
-
-        button.onClick(async () => {
-          await copyValue(this.plugin.settings.apiKey, t("settings.api_key.name"));
-          button.setIcon("check");
-          setTimeout(() => {
-            button.setIcon("copy");
-          }, 2000);
-        });
-      });
   }
 }
