@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { createError, defineEventHandler, readBody } from "h3";
 import { vaults } from "#app/db/schema";
-import { newId, requireAuthToken } from "#app/utils/auth";
+import { hashPassphrase, newId, requireAuthToken } from "#app/utils/auth";
 import { getOrmDb } from "#app/utils/db";
 import { logError, logInfo } from "#app/utils/logger";
 
@@ -10,11 +10,15 @@ export default defineEventHandler(async (event) => {
   try {
     requireAuthToken(event);
 
-    const body = await readBody<{ name?: string }>(event);
+    const body = await readBody<{ name?: string; passphrase?: string }>(event);
     const name = (body?.name || "").trim();
+    const passphrase = (body?.passphrase || "").trim();
 
     if (!name) {
       throw createError({ statusCode: 400, statusMessage: "name is required" });
+    }
+    if (!passphrase) {
+      throw createError({ statusCode: 400, statusMessage: "passphrase is required" });
     }
 
     const db = getOrmDb();
@@ -31,7 +35,8 @@ export default defineEventHandler(async (event) => {
 
     const id = newId("vault");
     const now = Date.now();
-    db.insert(vaults).values({ id, name, createdAt: now }).run();
+    const passphraseHash = hashPassphrase(passphrase);
+    db.insert(vaults).values({ id, name, passphraseHash, createdAt: now }).run();
 
     logInfo("vaults.create", { vaultId: id, name, durationMs: Date.now() - startedAt });
 

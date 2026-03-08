@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
-import { createError, defineEventHandler } from "h3";
+import { createError, defineEventHandler, readBody } from "h3";
 import { conflicts, devices, events, fileRevisions, files, syncCursors, syncOperations, vaults } from "#app/db/schema";
-import { requireAuthToken } from "#app/utils/auth";
+import { hashPassphrase, requireAuthToken } from "#app/utils/auth";
 import { getOrmDb } from "#app/utils/db";
 import { logError, logInfo } from "#app/utils/logger";
 
@@ -15,9 +15,15 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: "vault id is required" });
     }
 
+    const body = await readBody<{ passphrase?: string }>(event);
+    const passphrase = (body?.passphrase || "").trim();
+    if (!passphrase) {
+      throw createError({ statusCode: 400, statusMessage: "passphrase is required" });
+    }
+
     const db = getOrmDb();
     const vault = db
-      .select({ id: vaults.id })
+      .select({ id: vaults.id, passphraseHash: vaults.passphraseHash })
       .from(vaults)
       .where(eq(vaults.id, vaultId))
       .limit(1)
@@ -25,6 +31,10 @@ export default defineEventHandler(async (event) => {
 
     if (!vault) {
       throw createError({ statusCode: 404, statusMessage: "Vault not found" });
+    }
+
+    if (vault.passphraseHash && vault.passphraseHash !== hashPassphrase(passphrase)) {
+      throw createError({ statusCode: 403, statusMessage: "Invalid passphrase" });
     }
 
     const deviceIds = db
