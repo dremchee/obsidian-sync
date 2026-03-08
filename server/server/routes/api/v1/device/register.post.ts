@@ -4,9 +4,12 @@ import { devices, syncCursors, vaults } from "#app/db/schema";
 import { getOrmDb } from "#app/utils/db";
 import { generateApiKey, hashApiKey, newId, requireAuthToken } from "#app/utils/auth";
 import { logError, logInfo } from "#app/utils/logger";
+import { getClientIp } from "#app/utils/rate-limit";
 
 export default defineEventHandler(async (event) => {
   const startedAt = Date.now();
+  const reqId = String((event.context as Record<string, unknown>).requestId || "");
+  const ip = getClientIp(event);
   try {
     requireAuthToken(event);
 
@@ -49,6 +52,8 @@ export default defineEventHandler(async (event) => {
     }).onConflictDoNothing();
 
     logInfo("device.register.done", {
+      reqId,
+      ip,
       vaultId: vault.id,
       deviceId,
       deviceName,
@@ -62,7 +67,7 @@ export default defineEventHandler(async (event) => {
       createdAt: now
     };
   } catch (error) {
-    logError("device.register.failed", error, { durationMs: Date.now() - startedAt });
+    logError("device.register.failed", error, { reqId, ip, durationMs: Date.now() - startedAt });
     throw error;
   }
 });

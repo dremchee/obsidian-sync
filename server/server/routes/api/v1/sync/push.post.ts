@@ -3,10 +3,12 @@ import { requireDevice } from "#app/utils/auth";
 import { applyOperations, type PushOperation } from "#app/utils/sync-core";
 import { hasBlob } from "#app/utils/cas";
 import { logError, logInfo, logWarn } from "#app/utils/logger";
+import { getClientIp } from "#app/utils/rate-limit";
 
 export default defineEventHandler(async (event) => {
   const startedAt = Date.now();
   const reqId = String((event.context as Record<string, unknown>).requestId || "");
+  const ip = getClientIp(event);
   try {
     const requester = await requireDevice(event);
     const body = await readBody<{ operations: PushOperation[] }>(event);
@@ -43,6 +45,7 @@ export default defineEventHandler(async (event) => {
 
     logInfo("sync.push.done", {
       reqId,
+      ip,
       vaultId: requester.vaultId,
       deviceId: requester.deviceId,
       operationCount: ops.length,
@@ -52,7 +55,7 @@ export default defineEventHandler(async (event) => {
 
     return { results };
   } catch (error) {
-    logError("sync.push.failed", error, { reqId, durationMs: Date.now() - startedAt });
+    logError("sync.push.failed", error, { reqId, ip, durationMs: Date.now() - startedAt });
     throw error;
   }
 });
