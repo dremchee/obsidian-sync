@@ -1,7 +1,10 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import type { SyncEngine } from "../sync/engine";
 import type { StartupSyncMode, SyncSettings } from "../settings";
 import { VaultConnectModal } from "./create-vault-modal";
+
+const CONFLICT_RE = / \(conflict [a-f0-9]+ \d{4}-\d{2}-\d{2}\)/;
+const CONFLICT_RE_GLOBAL = / \(conflict [a-f0-9]+ \d{4}-\d{2}-\d{2}\)/g;
 
 export type ServerConnectionState = "unknown" | "ok" | "error";
 
@@ -16,7 +19,8 @@ export interface SyncSettingsTabContext {
   serverConnectionMessage: string;
   saveSettings: () => Promise<void>;
   setStartupMode: (mode: StartupSyncMode) => void;
-  testServerConnection: () => Promise<void>;
+  testServerConnection: (opts?: { silent?: boolean }) => Promise<void>;
+  triggerImmediateSync: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -38,6 +42,10 @@ export class SyncSettingsTab extends PluginSettingTab {
     containerEl.empty();
     const t = this.plugin.t;
     const isRegistered = Boolean(this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked);
+
+    if (this.plugin.serverConnectionState === "unknown" && this.plugin.settings.serverUrl) {
+      this.plugin.testServerConnection({ silent: true });
+    }
 
     const addSection = (title: string, desc?: string) => {
       containerEl.createEl("h3", { text: title });
@@ -125,6 +133,9 @@ export class SyncSettingsTab extends PluginSettingTab {
     }
 
     if (!isRegistered) return;
+
+    // --- Conflicts ---
+    this.renderConflictSection(containerEl, t);
 
     // --- Plugin settings (only when registered) ---
     addSection("Plugin");
@@ -272,6 +283,7 @@ export class SyncSettingsTab extends PluginSettingTab {
           .setButtonText(t("settings.vault_disconnect.button"))
           .setWarning()
           .onClick(async () => {
+            this.plugin.engine?.resetState();
             this.plugin.settings.apiKey = "";
             this.plugin.settings.deviceId = "";
             this.plugin.settings.vaultName = "";
@@ -324,15 +336,9 @@ export class SyncSettingsTab extends PluginSettingTab {
       return;
     }
 
-    // Load vaults button / auto-load
+    // Auto-load vaults
     if (!this.vaultsLoaded && !this.vaultsLoading) {
-      new Setting(containerEl)
-        .setName(t("settings.vault_picker.load"))
-        .addButton((button) =>
-          button.setButtonText(t("settings.vault_picker.load_button")).onClick(() => {
-            this.loadVaults();
-          })
-        );
+      this.loadVaults();
       return;
     }
 
@@ -384,6 +390,9 @@ export class SyncSettingsTab extends PluginSettingTab {
               this.plugin.settings.passphrase = result.passphrase;
               this.plugin.settings.vaultName = result.vaultName;
               try {
+                this.plugin.engine?.resetState();
+                this.plugin.engine?.setNewVault(true);
+                this.plugin.engine?.markAllFilesDirty();
                 await this.plugin.engine?.createVault(result.vaultName, result.passphrase);
                 const reg = await this.plugin.engine?.registerDevice();
                 if (reg) {
@@ -393,6 +402,7 @@ export class SyncSettingsTab extends PluginSettingTab {
                   this.plugin.isDeviceRevoked = false;
                   this.plugin.revokedNoticeShown = false;
                   new Notice(t("notices.device_registered"));
+                  this.plugin.triggerImmediateSync();
                   this.display();
                 }
               } catch (err) {
@@ -419,6 +429,7 @@ export class SyncSettingsTab extends PluginSettingTab {
         this.plugin.settings.passphrase = result.passphrase;
         this.plugin.settings.vaultName = result.vaultName;
         try {
+          this.plugin.engine?.resetState();
           const reg = await this.plugin.engine?.registerDevice();
           if (reg) {
             this.plugin.settings.apiKey = reg.apiKey;
@@ -427,6 +438,7 @@ export class SyncSettingsTab extends PluginSettingTab {
             this.plugin.isDeviceRevoked = false;
             this.plugin.revokedNoticeShown = false;
             new Notice(t("notices.device_registered"));
+            this.plugin.triggerImmediateSync();
             this.display();
           }
         } catch (err) {
@@ -467,6 +479,75 @@ export class SyncSettingsTab extends PluginSettingTab {
     } finally {
       this.vaultsLoading = false;
       this.display();
+    }
+  }
+
+  private findConflictFiles(): TFile[] {
+    return this.app.vault.getFiles().filter((f) => CONFLICT_RE.test(f.path));
+  }
+
+  private getOriginalPath(conflictPath: string): string {
+    return conflictPath.replace(CONFLICT_RE_GLOBAL, "");
+  }
+
+  private renderConflictSection(
+    containerEl: HTMLElement,
+    t: (key: string, params?: Record<string, string | number>) => string
+  ) {
+    const conflicts = this.findConflictFiles();
+    if (!conflicts.length) return;
+
+    const setting = new Setting(containerEl)
+      .setName(t("settings.conflicts.name"))
+      .setDesc(t("settings.conflicts.desc", { count: conflicts.length }))
+      .addButton((button) =>
+        button
+          .setButtonText(t("settings.conflicts.resolve"))
+          .setWarning()
+          .onClick(async () => {
+            button.setDisabled(true);
+            await this.resolveConflicts(conflicts, t);
+            button.setDisabled(false);
+            this.display();
+          })
+      );
+    setting.settingEl.style.borderLeft = "3px solid var(--color-orange)";
+    setting.settingEl.style.paddingLeft = "12px";
+  }
+
+  private async resolveConflicts(
+    conflicts: TFile[],
+    t: (key: string, params?: Record<string, string | number>) => string
+  ) {
+    let renamed = 0;
+    let deleted = 0;
+
+    for (const file of conflicts) {
+      const originalPath = this.getOriginalPath(file.path);
+      const originalExists = this.app.vault.getAbstractFileByPath(originalPath) instanceof TFile;
+
+      try {
+        if (originalExists) {
+          await this.app.vault.delete(file);
+          deleted += 1;
+        } else {
+          const parentDir = originalPath.substring(0, originalPath.lastIndexOf("/"));
+          if (parentDir && !(await this.app.vault.adapter.exists(parentDir))) {
+            await this.app.vault.adapter.mkdir(parentDir);
+          }
+          await this.app.vault.rename(file, originalPath);
+          renamed += 1;
+        }
+      } catch (err) {
+        console.error(`[custom-sync] failed to resolve conflict ${file.path}: ${err}`);
+      }
+    }
+
+    const resolved = renamed + deleted;
+    if (resolved > 0) {
+      new Notice(t("notices.conflicts_resolved", { resolved, renamed, deleted }));
+    } else {
+      new Notice(t("notices.conflicts_none"));
     }
   }
 }

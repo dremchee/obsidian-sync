@@ -121,5 +121,13 @@
   "vault_modal.confirm_join": "Подключиться",
   "vault_modal.confirm_delete": "Удалить",
 
-  "notices.passphrase_invalid": "Неверная кодовая фраза."
+  "notices.passphrase_invalid": "Неверная кодовая фраза.",
+
+  "settings.conflicts.name": "Файлы конфликтов",
+  "settings.conflicts.desc": "Найдено {{count}} конфликтных файлов в хранилище.",
+  "settings.conflicts.none": "Конфликтных файлов не найдено.",
+  "settings.conflicts.resolve": "Разрешить все",
+  "settings.conflicts.scanning": "Сканирование...",
+  "notices.conflicts_resolved": "Разрешено {{resolved}} конфликтов ({{renamed}} переименовано, {{deleted}} удалено).",
+  "notices.conflicts_none": "Нет конфликтных файлов для разрешения."
 }

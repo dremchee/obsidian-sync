@@ -68,8 +68,8 @@ export default class CustomSyncPlugin extends Plugin {
 
     this.registerEvent(this.app.vault.on("create", (file) => this.markDirtyAndSchedule(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => this.markDirtyAndSchedule(file)));
-    this.registerEvent(this.app.vault.on("delete", (file) => this.markDirtyAndSchedule(file)));
-    this.registerEvent(this.app.vault.on("rename", (file) => this.markDirtyAndSchedule(file)));
+    this.registerEvent(this.app.vault.on("delete", (file) => this.markDeleteAndSchedule(file)));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.markRenameAndSchedule(file, oldPath)));
 
     this.addCommand({
       id: "custom-sync-now",
@@ -220,6 +220,36 @@ export default class CustomSyncPlugin extends Plugin {
     }
     if (file?.path) {
       this.engine?.markDirty(file.path);
+    }
+    this.pendingSync = true;
+    this.updateStatusBar();
+    this.scheduleSync();
+    this.schedulePersist();
+  }
+
+  private markDeleteAndSchedule(file?: TAbstractFile) {
+    if (file?.path && this.engine?.shouldSuppressLocalEvent(file.path)) {
+      return;
+    }
+    if (file?.path) {
+      this.engine?.markFileDeleted(file.path);
+    }
+    this.pendingSync = true;
+    this.updateStatusBar();
+    this.scheduleSync();
+    this.schedulePersist();
+  }
+
+  private markRenameAndSchedule(file?: TAbstractFile, oldPath?: string) {
+    const nextPath = file?.path || "";
+    const prevPath = oldPath || "";
+    if ((prevPath && this.engine?.shouldSuppressLocalEvent(prevPath)) || (nextPath && this.engine?.shouldSuppressLocalEvent(nextPath))) {
+      return;
+    }
+    if (prevPath && nextPath) {
+      this.engine?.markFileRenamed(prevPath, nextPath);
+    } else if (nextPath) {
+      this.engine?.markDirty(nextPath);
     }
     this.pendingSync = true;
     this.updateStatusBar();
@@ -453,13 +483,25 @@ export default class CustomSyncPlugin extends Plugin {
     appWithSettings.setting?.openTabById?.(this.manifest.id);
   }
 
-  async testServerConnection() {
+  triggerImmediateSync() {
+    if (this.syncTimer) {
+      globalThis.clearTimeout(this.syncTimer);
+      this.syncTimer = null;
+    }
+    this.startupSmoothActive = false;
+    this.pendingSync = true;
+    this.updateStatusBar();
+    void this.syncNow(false, true);
+  }
+
+  async testServerConnection(opts?: { silent?: boolean }) {
+    const silent = opts?.silent ?? false;
     const base = this.settings.serverUrl.trim().replace(/\/+$/, "");
     if (!base) {
       this.serverConnectionState = "error";
       this.serverConnectionMessage = this.t("notices.server_url_empty");
       this.refreshSettingsUi();
-      new Notice(this.t("notices.server_url_empty"));
+      if (!silent) new Notice(this.t("notices.server_url_empty"));
       return;
     }
 
@@ -474,19 +516,19 @@ export default class CustomSyncPlugin extends Plugin {
         this.serverConnectionState = "error";
         this.serverConnectionMessage = `${res.status} ${res.text || ""}`.trim();
         this.refreshSettingsUi();
-        new Notice(this.t("notices.connection_failed", { error: `${res.status} ${res.text || ""}`.trim() }));
+        if (!silent) new Notice(this.t("notices.connection_failed", { error: `${res.status} ${res.text || ""}`.trim() }));
         return;
       }
 
       this.serverConnectionState = "ok";
       this.serverConnectionMessage = `Connected (HTTP ${res.status})`;
       this.refreshSettingsUi();
-      new Notice(this.t("notices.connection_ok", { status: res.status }));
+      if (!silent) new Notice(this.t("notices.connection_ok", { status: res.status }));
     } catch (err) {
       this.serverConnectionState = "error";
       this.serverConnectionMessage = String(err);
       this.refreshSettingsUi();
-      new Notice(this.t("notices.connection_failed", { error: String(err) }));
+      if (!silent) new Notice(this.t("notices.connection_failed", { error: String(err) }));
     }
   }
 }

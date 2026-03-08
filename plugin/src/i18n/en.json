@@ -121,5 +121,13 @@
   "vault_modal.confirm_join": "Connect",
   "vault_modal.confirm_delete": "Delete",
 
-  "notices.passphrase_invalid": "Invalid passphrase."
+  "notices.passphrase_invalid": "Invalid passphrase.",
+
+  "settings.conflicts.name": "Conflict files",
+  "settings.conflicts.desc": "Found {{count}} conflict files in the vault.",
+  "settings.conflicts.none": "No conflict files found.",
+  "settings.conflicts.resolve": "Resolve all",
+  "settings.conflicts.scanning": "Scanning...",
+  "notices.conflicts_resolved": "Resolved {{resolved}} conflict files ({{renamed}} renamed, {{deleted}} deleted).",
+  "notices.conflicts_none": "No conflict files to resolve."
 }

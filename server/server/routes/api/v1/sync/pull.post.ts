@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { defineEventHandler, readBody } from "h3";
 import { events, fileRevisions, syncCursors } from "#app/db/schema";
 import { requireDevice } from "#app/utils/auth";
@@ -20,7 +20,9 @@ export default defineEventHandler(async (event) => {
       .select({
         eventId: events.id,
         eventTs: events.ts,
+        fileId: events.fileId,
         revisionId: fileRevisions.id,
+        prevRevisionId: fileRevisions.prevRevisionId,
         path: fileRevisions.path,
         op: fileRevisions.op,
         blobHash: fileRevisions.blobHash,
@@ -33,7 +35,38 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(events.vaultId, requester.vaultId), gt(events.id, after)))
       .orderBy(asc(events.id))
       .limit(limit);
-    const filteredRows = includeDeleted ? rows : rows.filter((r) => r.op !== "delete");
+
+    const prevRevisionIds = rows
+      .filter((row) => row.op === "rename" && row.prevRevisionId)
+      .map((row) => row.prevRevisionId as string);
+    const prevPathByRevisionId = new Map<string, string>();
+    if (prevRevisionIds.length) {
+      const previousRows = await db
+        .select({
+          revisionId: fileRevisions.id,
+          path: fileRevisions.path
+        })
+        .from(fileRevisions)
+        .where(inArray(fileRevisions.id, Array.from(new Set(prevRevisionIds))));
+      for (const row of previousRows) {
+        prevPathByRevisionId.set(row.revisionId, row.path);
+      }
+    }
+
+    const enrichedRows = rows.map((row) => ({
+      eventId: row.eventId,
+      eventTs: row.eventTs,
+      fileId: row.fileId,
+      revisionId: row.revisionId,
+      path: row.path,
+      prevPath: row.op === "rename" && row.prevRevisionId ? prevPathByRevisionId.get(row.prevRevisionId) || null : null,
+      op: row.op,
+      blobHash: row.blobHash,
+      size: row.size,
+      deviceId: row.deviceId,
+      revisionTs: row.revisionTs
+    }));
+    const filteredRows = includeDeleted ? enrichedRows : enrichedRows.filter((r) => r.op !== "delete");
 
     const last = rows.length ? rows[rows.length - 1].eventId : after;
 
