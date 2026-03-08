@@ -1,5 +1,11 @@
 import { argon2id } from "@noble/hashes/argon2";
 
+const ARGON2_TIME_COST = 2;
+const ARGON2_MEMORY_COST = 1 << 14;
+const ARGON2_PARALLELISM = 1;
+const DERIVED_KEY_CACHE_LIMIT = 128;
+const derivedKeyCache = new Map<string, Promise<CryptoKey>>();
+
 function toB64(buf: Uint8Array) {
   let binary = "";
   for (const b of buf) binary += String.fromCharCode(b);
@@ -19,10 +25,48 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
+function makeDerivedKeyCacheKey(passphrase: string, salt: Uint8Array) {
+  return `${passphrase}\u0000${toB64(salt)}`;
+}
+
+function rememberDerivedKey(cacheKey: string, value: Promise<CryptoKey>) {
+  derivedKeyCache.delete(cacheKey);
+  derivedKeyCache.set(cacheKey, value);
+  if (derivedKeyCache.size <= DERIVED_KEY_CACHE_LIMIT) {
+    return value;
+  }
+
+  const oldestKey = derivedKeyCache.keys().next().value;
+  if (typeof oldestKey === "string") {
+    derivedKeyCache.delete(oldestKey);
+  }
+  return value;
+}
+
 export async function deriveKey(passphrase: string, salt: Uint8Array) {
-  // Keep KDF cost moderate to avoid UI freezes in Obsidian plugin runtime.
-  const raw = argon2id(passphrase, salt, { t: 1, m: 1 << 12, p: 1, dkLen: 32 });
-  return crypto.subtle.importKey("raw", toArrayBuffer(raw), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  const cacheKey = makeDerivedKeyCacheKey(passphrase, salt);
+  const cached = derivedKeyCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const derivedKeyPromise = (async () => {
+    const raw = argon2id(passphrase, salt, {
+      t: ARGON2_TIME_COST,
+      m: ARGON2_MEMORY_COST,
+      p: ARGON2_PARALLELISM,
+      dkLen: 32
+    });
+    return crypto.subtle.importKey("raw", toArrayBuffer(raw), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  })();
+
+  rememberDerivedKey(cacheKey, derivedKeyPromise);
+  try {
+    return await derivedKeyPromise;
+  } catch (err) {
+    derivedKeyCache.delete(cacheKey);
+    throw err;
+  }
 }
 
 export async function encryptBytes(passphrase: string, data: Uint8Array) {
