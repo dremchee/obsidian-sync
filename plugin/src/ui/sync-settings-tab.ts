@@ -1,6 +1,7 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
 import type { SyncEngine } from "../sync/engine";
 import type { StartupSyncMode, SyncSettings } from "../settings";
+import { VaultConnectModal } from "./create-vault-modal";
 
 export type ServerConnectionState = "unknown" | "ok" | "error";
 
@@ -23,7 +24,6 @@ type SyncSettingsTabPlugin = Plugin & SyncSettingsTabContext;
 
 export class SyncSettingsTab extends PluginSettingTab {
   plugin: SyncSettingsTabPlugin;
-  private passphraseVisible = false;
   private vaults: VaultInfo[] = [];
   private vaultsLoaded = false;
   private vaultsLoading = false;
@@ -113,37 +113,6 @@ export class SyncSettingsTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             this.vaultsLoaded = false;
           });
-      });
-
-    // --- Passphrase ---
-    let passphraseInput: HTMLInputElement | null = null;
-    new Setting(containerEl)
-      .setName(t("settings.passphrase.name"))
-      .setDesc(t("settings.passphrase.desc"))
-      .addText((text) => {
-        passphraseInput = text.inputEl;
-        text.inputEl.type = this.passphraseVisible ? "text" : "password";
-        return text
-          .setPlaceholder(t("settings.passphrase.placeholder"))
-          .setValue(this.plugin.settings.passphrase)
-          .onChange(async (value) => {
-            this.plugin.settings.passphrase = value;
-            await this.plugin.saveSettings();
-          });
-      })
-      .addExtraButton((button) => {
-        const applyIconAndTooltip = () => {
-          button.setIcon(this.passphraseVisible ? "eye-off" : "eye");
-          button.setTooltip(this.passphraseVisible ? t("settings.passphrase.hide") : t("settings.passphrase.show"));
-        };
-        applyIconAndTooltip();
-        button.onClick(() => {
-          this.passphraseVisible = !this.passphraseVisible;
-          if (passphraseInput) {
-            passphraseInput.type = this.passphraseVisible ? "text" : "password";
-          }
-          applyIconAndTooltip();
-        });
       });
 
     // --- Vault ---
@@ -306,6 +275,7 @@ export class SyncSettingsTab extends PluginSettingTab {
             this.plugin.settings.apiKey = "";
             this.plugin.settings.deviceId = "";
             this.plugin.settings.vaultName = "";
+            this.plugin.settings.passphrase = "";
             await this.plugin.saveSettings();
             this.plugin.isDeviceRevoked = false;
             this.plugin.revokedNoticeShown = false;
@@ -382,24 +352,16 @@ export class SyncSettingsTab extends PluginSettingTab {
           .setName(vault.name)
           .setDesc(t("settings.vault_picker.vault_info", { devices: vault.deviceCount, date }))
           .addButton((button) =>
-            button.setButtonText(t("settings.vault_picker.join")).onClick(async () => {
-              await this.joinVault(vault.name, t);
+            button.setButtonText(t("settings.vault_picker.join")).onClick(() => {
+              this.joinVault(vault, t);
             })
           )
           .addButton((button) =>
             button
               .setButtonText(t("settings.vault_picker.delete"))
               .setWarning()
-              .onClick(async () => {
-                if (!confirm(t("settings.vault_picker.delete_confirm", { name: vault.name }))) return;
-                try {
-                  await this.plugin.engine?.deleteVault(vault.id);
-                  new Notice(t("notices.vault_deleted", { name: vault.name }));
-                  this.vaultsLoaded = false;
-                  this.loadVaults();
-                } catch (err) {
-                  new Notice(t("notices.vault_delete_failed", { error: String(err) }));
-                }
+              .onClick(() => {
+                this.deleteVault(vault, t);
               })
           );
       }
@@ -411,54 +373,85 @@ export class SyncSettingsTab extends PluginSettingTab {
     }
 
     // Create new vault
-    let newVaultName = "";
     new Setting(containerEl)
       .setName(t("settings.vault_picker.create_name"))
-      .addText((text) =>
-        text
-          .setPlaceholder(t("settings.vault_picker.create_placeholder"))
-          .onChange((value) => { newVaultName = value.trim(); })
-      )
       .addButton((button) =>
-        button.setButtonText(t("settings.vault_picker.create_button")).onClick(async () => {
-          if (!newVaultName) return;
-          if (!this.plugin.settings.passphrase) {
-            new Notice(t("notices.passphrase_required"));
-            return;
-          }
-          button.setDisabled(true);
-          try {
-            await this.plugin.engine?.createVault(newVaultName);
-            await this.joinVault(newVaultName, t);
-          } catch (err) {
-            new Notice(t("notices.vault_create_failed", { error: String(err) }));
-          } finally {
-            button.setDisabled(false);
-          }
+        button.setButtonText(t("settings.vault_picker.create_button")).onClick(() => {
+          new VaultConnectModal(this.app, {
+            mode: "create",
+            t,
+            onSubmit: async (result) => {
+              this.plugin.settings.passphrase = result.passphrase;
+              this.plugin.settings.vaultName = result.vaultName;
+              try {
+                await this.plugin.engine?.createVault(result.vaultName, result.passphrase);
+                const reg = await this.plugin.engine?.registerDevice();
+                if (reg) {
+                  this.plugin.settings.apiKey = reg.apiKey;
+                  this.plugin.settings.deviceId = reg.deviceId;
+                  await this.plugin.saveSettings();
+                  this.plugin.isDeviceRevoked = false;
+                  this.plugin.revokedNoticeShown = false;
+                  new Notice(t("notices.device_registered"));
+                  this.display();
+                }
+              } catch (err) {
+                new Notice(t("notices.vault_create_failed", { error: String(err) }));
+              }
+            }
+          }).open();
         })
       );
   }
 
-  private async joinVault(vaultName: string, t: (key: string, params?: Record<string, string | number>) => string) {
-    if (!this.plugin.settings.passphrase) {
-      new Notice(t("notices.passphrase_required"));
-      return;
-    }
-    this.plugin.settings.vaultName = vaultName;
-    try {
-      const reg = await this.plugin.engine?.registerDevice();
-      if (reg) {
-        this.plugin.settings.apiKey = reg.apiKey;
-        this.plugin.settings.deviceId = reg.deviceId;
-        await this.plugin.saveSettings();
-        this.plugin.isDeviceRevoked = false;
-        this.plugin.revokedNoticeShown = false;
-        new Notice(t("notices.device_registered"));
-        this.display();
+  private joinVault(vault: VaultInfo, t: (key: string, params?: Record<string, string | number>) => string) {
+    new VaultConnectModal(this.app, {
+      mode: "join",
+      vaultName: vault.name,
+      t,
+      onSubmit: async (result) => {
+        try {
+          await this.plugin.engine?.verifyPassphrase(vault.id, result.passphrase);
+        } catch {
+          new Notice(t("notices.passphrase_invalid"));
+          return;
+        }
+        this.plugin.settings.passphrase = result.passphrase;
+        this.plugin.settings.vaultName = result.vaultName;
+        try {
+          const reg = await this.plugin.engine?.registerDevice();
+          if (reg) {
+            this.plugin.settings.apiKey = reg.apiKey;
+            this.plugin.settings.deviceId = reg.deviceId;
+            await this.plugin.saveSettings();
+            this.plugin.isDeviceRevoked = false;
+            this.plugin.revokedNoticeShown = false;
+            new Notice(t("notices.device_registered"));
+            this.display();
+          }
+        } catch (err) {
+          new Notice(t("notices.register_failed", { error: String(err) }));
+        }
       }
-    } catch (err) {
-      new Notice(t("notices.register_failed", { error: String(err) }));
-    }
+    }).open();
+  }
+
+  private deleteVault(vault: VaultInfo, t: (key: string, params?: Record<string, string | number>) => string) {
+    new VaultConnectModal(this.app, {
+      mode: "delete",
+      vaultName: vault.name,
+      t,
+      onSubmit: async (result) => {
+        try {
+          await this.plugin.engine?.deleteVault(vault.id, result.passphrase);
+          new Notice(t("notices.vault_deleted", { name: vault.name }));
+          this.vaultsLoaded = false;
+          this.loadVaults();
+        } catch (err) {
+          new Notice(t("notices.vault_delete_failed", { error: String(err) }));
+        }
+      }
+    }).open();
   }
 
   private async loadVaults() {

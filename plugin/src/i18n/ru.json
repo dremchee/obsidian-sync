@@ -108,5 +108,18 @@
   "settings.retry_window.max": "макс",
 
   "settings.debug_perf.name": "Отладочные логи производительности",
-  "settings.debug_perf.desc": "Писать детальные тайминги этапов синка в консоль разработчика."
+  "settings.debug_perf.desc": "Писать детальные тайминги этапов синка в консоль разработчика.",
+
+  "vault_modal.title_create": "Создать новое хранилище",
+  "vault_modal.title_join": "Подключиться к \"{{vault}}\"",
+  "vault_modal.title_delete": "Удалить хранилище \"{{vault}}\"",
+  "vault_modal.desc_create": "Задайте кодовую фразу для клиентского шифрования. Все устройства, подключающиеся к этому хранилищу, должны будут ввести ту же фразу.",
+  "vault_modal.desc_join": "Введите кодовую фразу, которая была задана при создании хранилища.",
+  "vault_modal.desc_delete": "Введите кодовую фразу хранилища для подтверждения удаления. Это действие необратимо.",
+  "vault_modal.vault_name": "Название хранилища",
+  "vault_modal.confirm_create": "Создать и подключиться",
+  "vault_modal.confirm_join": "Подключиться",
+  "vault_modal.confirm_delete": "Удалить",
+
+  "notices.passphrase_invalid": "Неверная кодовая фраза."
 }

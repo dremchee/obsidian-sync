@@ -265,19 +265,27 @@ export class SyncEngine {
     }>("/api/v1/vaults", { method: "GET", headers: this.adminHeaders() });
   }
 
-  async createVault(name: string) {
+  async createVault(name: string, passphrase: string) {
     if (!this.settings.authToken) throw new Error("Auth token is required");
     return this.requestJson<{ id: string; name: string; createdAt: number }>(
       "/api/v1/vaults",
-      { method: "POST", headers: this.adminHeaders(), body: { name } }
+      { method: "POST", headers: this.adminHeaders(), body: { name, passphrase } }
     );
   }
 
-  async deleteVault(vaultId: string) {
+  async verifyPassphrase(vaultId: string, passphrase: string) {
+    if (!this.settings.authToken) throw new Error("Auth token is required");
+    return this.requestJson<{ valid: boolean }>(
+      `/api/v1/vaults/${vaultId}/verify`,
+      { method: "POST", headers: this.adminHeaders(), body: { passphrase } }
+    );
+  }
+
+  async deleteVault(vaultId: string, passphrase: string) {
     if (!this.settings.authToken) throw new Error("Auth token is required");
     return this.requestJson<{ deleted: boolean }>(
       `/api/v1/vaults/${vaultId}`,
-      { method: "DELETE", headers: this.adminHeaders() }
+      { method: "DELETE", headers: this.adminHeaders(), body: { passphrase } }
     );
   }
 

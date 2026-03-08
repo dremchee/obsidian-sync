@@ -108,5 +108,18 @@
   "settings.retry_window.max": "max",
 
   "settings.debug_perf.name": "Debug perf logs",
-  "settings.debug_perf.desc": "Emit detailed sync stage timing logs to developer console."
+  "settings.debug_perf.desc": "Emit detailed sync stage timing logs to developer console.",
+
+  "vault_modal.title_create": "Create new vault",
+  "vault_modal.title_join": "Join vault \"{{vault}}\"",
+  "vault_modal.title_delete": "Delete vault \"{{vault}}\"",
+  "vault_modal.desc_create": "Choose a passphrase for client-side encryption. All devices joining this vault will need the same passphrase.",
+  "vault_modal.desc_join": "Enter the passphrase that was set when this vault was created.",
+  "vault_modal.desc_delete": "Enter the vault passphrase to confirm deletion. This action cannot be undone.",
+  "vault_modal.vault_name": "Vault name",
+  "vault_modal.confirm_create": "Create & Connect",
+  "vault_modal.confirm_join": "Connect",
+  "vault_modal.confirm_delete": "Delete",
+
+  "notices.passphrase_invalid": "Invalid passphrase."
 }
