@@ -1,6 +1,7 @@
 import { requestUrl, type RequestUrlResponse } from "obsidian";
 import type { SyncSettings } from "../../settings";
 import type { BatchBlobResponse, MissingBlobResponse } from "./types";
+import { sha256Hex } from "./utils";
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -129,7 +130,9 @@ export class EngineClient {
   }
 
   async downloadBlob(hash: string) {
-    return this.requestBinary(`/api/v1/blob/${hash}`);
+    const bytes = await this.requestBinary(`/api/v1/blob/${hash}`);
+    await this.verifyBlobHash(hash, bytes);
+    return bytes;
   }
 
   async downloadBlobsBatched(hashes: string[]): Promise<Map<string, Uint8Array>> {
@@ -146,7 +149,9 @@ export class EngineClient {
         body: { hashes: chunk }
       });
       for (const item of res.items || []) {
-        out.set(item.hash, this.fromB64(item.dataBase64));
+        const bytes = this.fromB64(item.dataBase64);
+        await this.verifyBlobHash(item.hash, bytes);
+        out.set(item.hash, bytes);
       }
     }
 
@@ -264,5 +269,12 @@ export class EngineClient {
     const out = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
     return out;
+  }
+
+  private async verifyBlobHash(expectedHash: string, bytes: Uint8Array) {
+    const actualHash = await sha256Hex(bytes);
+    if (actualHash !== expectedHash.toLowerCase()) {
+      throw new Error(`BLOB_HASH_MISMATCH: expected ${expectedHash.toLowerCase()}, got ${actualHash}`);
+    }
   }
 }
