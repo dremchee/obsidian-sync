@@ -1,6 +1,9 @@
 {
   "name": "obsidian-sync",
   "private": true,
+  "imports": {
+    "#app/*": "./server/server/*"
+  },
   "workspaces": [
     "server",
     "plugin"
@@ -10,9 +13,11 @@
     "build:server": "npm --workspace server run build",
     "dev:plugin": "npm --workspace plugin run dev",
     "build:plugin": "npm --workspace plugin run build",
-    "deploy:plugin": "npm run build:plugin && npm --workspace plugin run deploy:obsidian"
+    "deploy:plugin": "npm run build:plugin && npm --workspace plugin run deploy:obsidian",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "@types/node": "^25.3.3"
+    "@types/node": "^25.3.3",
+    "vitest": "^4.0.18"
   }
 }
