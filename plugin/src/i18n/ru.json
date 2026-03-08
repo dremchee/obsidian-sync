@@ -15,6 +15,11 @@
   "notices.connection_ok": "Подключение OK: {{status}}",
   "notices.copied": "{{value}} скопировано",
   "notices.copy_failed": "Не удалось скопировать: {{error}}",
+  "notices.vault_disconnected": "Отключено от хранилища.",
+  "notices.vault_deleted": "Хранилище \"{{name}}\" удалено.",
+  "notices.vault_delete_failed": "Не удалось удалить хранилище: {{error}}",
+  "notices.vault_create_failed": "Не удалось создать хранилище: {{error}}",
+  "notices.vault_load_failed": "Не удалось загрузить список хранилищ: {{error}}",
 
   "status.sync_disabled": "Синк отключен",
   "status.sync_revoked": "Ключ отозван",
@@ -29,12 +34,11 @@
   "status.menu_open_settings": "Открыть настройки синка",
 
   "settings.section_connection": "Подключение",
+  "settings.section_vault": "Хранилище",
   "settings.section_startup": "Запуск и расписание",
   "settings.section_server": "Сервер",
   "settings.section_performance": "Производительность синка",
   "settings.section_reliability": "Надежность",
-  "settings.section_security": "Безопасность",
-  "settings.section_device": "Устройство",
 
   "settings.enable_sync.name": "Включить синк",
   "settings.enable_sync.desc": "Включить/выключить автоматическую синхронизацию. Ручная команда синка остается доступной.",
@@ -58,23 +62,35 @@
   "settings.auth_token.name": "Auth token",
   "settings.auth_token.desc": "Общий секрет, который сервер требует для регистрации новых устройств.",
   "settings.auth_token.placeholder": "Обязательно для авторегистрации",
-  "settings.server.connected": "Подключено: {{value}}",
-  "settings.server.failed": "Ошибка подключения: {{value}}",
-  "settings.server.not_checked": "Еще не проверено",
 
-  "settings.api_key.name": "API-ключ",
-  "settings.api_key.desc": "Назначается автоматически при регистрации",
-  "settings.api_key.copy": "Копировать",
-  "settings.device_id.name": "ID устройства",
-  "settings.device_id.desc": "Назначается сервером автоматически при регистрации",
-  "settings.device_id.copy": "Копировать",
-  "settings.vault_name.name": "Имя хранилища",
-  "settings.vault_name.desc": "Имя хранилища для регистрации устройства",
   "settings.passphrase.name": "Кодовая фраза",
   "settings.passphrase.desc": "Кодовая фраза для клиентского шифрования",
   "settings.passphrase.placeholder": "Обязательно для синка",
   "settings.passphrase.show": "Показать кодовую фразу",
   "settings.passphrase.hide": "Скрыть кодовую фразу",
+
+  "settings.vault_current.name": "Текущее хранилище",
+  "settings.vault_current.desc": "Подключено к хранилищу: {{name}}",
+  "settings.vault_disconnect.button": "Отключиться",
+
+  "settings.vault_picker.configure_first": "Введите адрес сервера и auth token для управления хранилищами.",
+  "settings.vault_picker.load": "Хранилища",
+  "settings.vault_picker.load_button": "Загрузить список",
+  "settings.vault_picker.loading": "Загрузка хранилищ...",
+  "settings.vault_picker.empty": "Хранилища не найдены. Создайте новое ниже.",
+  "settings.vault_picker.vault_info": "{{devices}} устройств, создано {{date}}",
+  "settings.vault_picker.join": "Присоединиться",
+  "settings.vault_picker.delete": "Удалить",
+  "settings.vault_picker.delete_confirm": "Удалить хранилище \"{{name}}\" и все его данные? Это действие необратимо.",
+  "settings.vault_picker.create_name": "Новое хранилище",
+  "settings.vault_picker.create_placeholder": "Название хранилища",
+  "settings.vault_picker.create_button": "Создать и подключиться",
+
+  "settings.register_device.name": "Регистрация устройства",
+  "settings.register_device.desc": "Запрашивает API-ключ и ID устройства у сервера и сохраняет их.",
+  "settings.register_device.revoked_desc": "Ключ устройства отозван. Нажмите «Перерегистрировать», чтобы получить новый.",
+  "settings.register_device.button": "Зарегистрировать",
+  "settings.register_device.button_reregister": "Перерегистрировать",
 
   "settings.interval_sec.name": "Интервал (сек)",
   "settings.interval_sec.desc": "Окно троттлинга для синка по изменениям",
@@ -91,14 +107,6 @@
   "settings.retry_window.base": "база",
   "settings.retry_window.max": "макс",
 
-  "settings.lww_policy.name": "Политика конфликтов",
-  "settings.lww_policy.desc": "LWW с конфликтными копиями: конфликтующие правки сохраняются как отдельные файлы вместо молчаливой потери.",
   "settings.debug_perf.name": "Отладочные логи производительности",
-  "settings.debug_perf.desc": "Писать детальные тайминги этапов синка в консоль разработчика.",
-
-  "settings.register_device.name": "Регистрация устройства",
-  "settings.register_device.desc": "Запрашивает API-ключ и ID устройства у сервера и сохраняет их.",
-  "settings.register_device.revoked_desc": "Ключ устройства отозван. Нажмите «Перерегистрировать», чтобы получить новый.",
-  "settings.register_device.button": "Зарегистрировать",
-  "settings.register_device.button_reregister": "Перерегистрировать"
+  "settings.debug_perf.desc": "Писать детальные тайминги этапов синка в консоль разработчика."
 }

@@ -15,6 +15,11 @@
   "notices.connection_ok": "Connection OK: {{status}}",
   "notices.copied": "{{value}} copied",
   "notices.copy_failed": "Copy failed: {{error}}",
+  "notices.vault_disconnected": "Disconnected from vault.",
+  "notices.vault_deleted": "Vault \"{{name}}\" deleted.",
+  "notices.vault_delete_failed": "Failed to delete vault: {{error}}",
+  "notices.vault_create_failed": "Failed to create vault: {{error}}",
+  "notices.vault_load_failed": "Failed to load vaults: {{error}}",
 
   "status.sync_disabled": "Sync disabled",
   "status.sync_revoked": "Sync revoked",
@@ -29,12 +34,11 @@
   "status.menu_open_settings": "Open Sync Settings",
 
   "settings.section_connection": "Connection",
+  "settings.section_vault": "Vault",
   "settings.section_startup": "Startup & Scheduling",
   "settings.section_server": "Server",
   "settings.section_performance": "Sync Performance",
   "settings.section_reliability": "Reliability",
-  "settings.section_security": "Security",
-  "settings.section_device": "Device",
 
   "settings.enable_sync.name": "Enable sync",
   "settings.enable_sync.desc": "Turn automatic sync on/off. Manual sync command still works.",
@@ -58,23 +62,35 @@
   "settings.auth_token.name": "Auth token",
   "settings.auth_token.desc": "Shared secret required by server to register new devices.",
   "settings.auth_token.placeholder": "Required for auto registration",
-  "settings.server.connected": "Connected: {{value}}",
-  "settings.server.failed": "Connection failed: {{value}}",
-  "settings.server.not_checked": "Not checked yet",
 
-  "settings.api_key.name": "API key",
-  "settings.api_key.desc": "Assigned automatically on register",
-  "settings.api_key.copy": "Copy",
-  "settings.device_id.name": "Device ID",
-  "settings.device_id.desc": "Assigned automatically by server on register",
-  "settings.device_id.copy": "Copy",
-  "settings.vault_name.name": "Vault name",
-  "settings.vault_name.desc": "Vault name used for device registration",
   "settings.passphrase.name": "Passphrase",
   "settings.passphrase.desc": "Passphrase used for client-side encryption",
   "settings.passphrase.placeholder": "Required for sync",
   "settings.passphrase.show": "Show passphrase",
   "settings.passphrase.hide": "Hide passphrase",
+
+  "settings.vault_current.name": "Current vault",
+  "settings.vault_current.desc": "Connected to vault: {{name}}",
+  "settings.vault_disconnect.button": "Disconnect",
+
+  "settings.vault_picker.configure_first": "Enter server URL and auth token to manage vaults.",
+  "settings.vault_picker.load": "Vaults",
+  "settings.vault_picker.load_button": "Load vaults",
+  "settings.vault_picker.loading": "Loading vaults...",
+  "settings.vault_picker.empty": "No vaults found. Create a new one below.",
+  "settings.vault_picker.vault_info": "{{devices}} devices, created {{date}}",
+  "settings.vault_picker.join": "Join",
+  "settings.vault_picker.delete": "Delete",
+  "settings.vault_picker.delete_confirm": "Delete vault \"{{name}}\" and all its data? This cannot be undone.",
+  "settings.vault_picker.create_name": "New vault",
+  "settings.vault_picker.create_placeholder": "Vault name",
+  "settings.vault_picker.create_button": "Create & Join",
+
+  "settings.register_device.name": "Register device",
+  "settings.register_device.desc": "Requests API key/device ID from server and saves them.",
+  "settings.register_device.revoked_desc": "Device key is revoked. Click Register to re-register this device.",
+  "settings.register_device.button": "Register",
+  "settings.register_device.button_reregister": "Re-register",
 
   "settings.interval_sec.name": "Interval (sec)",
   "settings.interval_sec.desc": "Throttle window for change-based sync",
@@ -91,14 +107,6 @@
   "settings.retry_window.base": "base",
   "settings.retry_window.max": "max",
 
-  "settings.lww_policy.name": "Conflict policy",
-  "settings.lww_policy.desc": "LWW with conflict copies: conflicting edits are saved as separate files instead of being silently lost.",
   "settings.debug_perf.name": "Debug perf logs",
-  "settings.debug_perf.desc": "Emit detailed sync stage timing logs to developer console.",
-
-  "settings.register_device.name": "Register device",
-  "settings.register_device.desc": "Requests API key/device ID from server and saves them.",
-  "settings.register_device.revoked_desc": "Device key is revoked. Click Register to re-register this device.",
-  "settings.register_device.button": "Register",
-  "settings.register_device.button_reregister": "Re-register"
+  "settings.debug_perf.desc": "Emit detailed sync stage timing logs to developer console."
 }

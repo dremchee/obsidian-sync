@@ -4,6 +4,8 @@ import type { StartupSyncMode, SyncSettings } from "../settings";
 
 export type ServerConnectionState = "unknown" | "ok" | "error";
 
+type VaultInfo = { id: string; name: string; createdAt: number; deviceCount: number };
+
 export interface SyncSettingsTabContext {
   settings: SyncSettings;
   isDeviceRevoked: boolean;
@@ -22,6 +24,9 @@ type SyncSettingsTabPlugin = Plugin & SyncSettingsTabContext;
 export class SyncSettingsTab extends PluginSettingTab {
   plugin: SyncSettingsTabPlugin;
   private passphraseVisible = false;
+  private vaults: VaultInfo[] = [];
+  private vaultsLoaded = false;
+  private vaultsLoading = false;
 
   constructor(app: App, plugin: SyncSettingsTabPlugin) {
     super(app, plugin);
@@ -32,6 +37,8 @@ export class SyncSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const t = this.plugin.t;
+    const isRegistered = Boolean(this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked);
+
     const addSection = (title: string, desc?: string) => {
       containerEl.createEl("h3", { text: title });
       if (desc) {
@@ -39,6 +46,7 @@ export class SyncSettingsTab extends PluginSettingTab {
       }
     };
 
+    // --- Connection ---
     addSection(t("settings.section_connection"));
 
     const serverUrlSetting = new Setting(containerEl)
@@ -103,21 +111,11 @@ export class SyncSettingsTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.authToken = value.trim();
             await this.plugin.saveSettings();
+            this.vaultsLoaded = false;
           });
       });
 
-    new Setting(containerEl)
-      .setName(t("settings.vault_name.name"))
-      .setDesc(t("settings.vault_name.desc"))
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.vaultName)
-          .onChange(async (value) => {
-            this.plugin.settings.vaultName = value.trim();
-            await this.plugin.saveSettings();
-          })
-      );
-
+    // --- Passphrase ---
     let passphraseInput: HTMLInputElement | null = null;
     new Setting(containerEl)
       .setName(t("settings.passphrase.name"))
@@ -148,56 +146,18 @@ export class SyncSettingsTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
-      .setName(t("settings.register_device.name"))
-      .setDesc(
-        this.plugin.isDeviceRevoked
-          ? t("settings.register_device.revoked_desc")
-          : t("settings.register_device.desc")
-      )
-      .addButton((button) => {
-        const isRegistered = Boolean(this.plugin.settings.apiKey && !this.plugin.isDeviceRevoked);
+    // --- Vault ---
+    addSection(t("settings.section_vault"));
 
-        button.setDisabled(isRegistered);
-        button.setButtonText(
-          isRegistered
-            ? "Зарегистрировано"
-            : this.plugin.isDeviceRevoked
-              ? t("settings.register_device.button_reregister")
-              : t("settings.register_device.button")
-        );
+    if (isRegistered) {
+      this.renderRegisteredVault(containerEl, t);
+    } else {
+      this.renderVaultPicker(containerEl, t);
+    }
 
-        if (!isRegistered) {
-          button.onClick(async () => {
-            if (!this.plugin.settings.vaultName) {
-              new Notice(t("notices.vault_name_required"));
-              return;
-            }
-            if (!this.plugin.settings.passphrase) {
-              new Notice(t("notices.passphrase_required"));
-              return;
-            }
-            button.setDisabled(true);
-            try {
-              const reg = await this.plugin.engine?.registerDevice();
-              if (reg) {
-                this.plugin.settings.apiKey = reg.apiKey;
-                this.plugin.settings.deviceId = reg.deviceId;
-                await this.plugin.saveSettings();
-                this.plugin.isDeviceRevoked = false;
-                this.plugin.revokedNoticeShown = false;
-                new Notice(t("notices.device_registered"));
-                this.display();
-              }
-            } catch (err) {
-              new Notice(t("notices.register_failed", { error: String(err) }));
-            } finally {
-              button.setDisabled(false);
-            }
-          });
-        }
-      });
+    if (!isRegistered) return;
 
+    // --- Plugin settings (only when registered) ---
     addSection("Plugin");
 
     new Setting(containerEl)
@@ -332,5 +292,188 @@ export class SyncSettingsTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+  }
+
+  private renderRegisteredVault(containerEl: HTMLElement, t: (key: string, params?: Record<string, string | number>) => string) {
+    new Setting(containerEl)
+      .setName(t("settings.vault_current.name"))
+      .setDesc(t("settings.vault_current.desc", { name: this.plugin.settings.vaultName }))
+      .addButton((button) =>
+        button
+          .setButtonText(t("settings.vault_disconnect.button"))
+          .setWarning()
+          .onClick(async () => {
+            this.plugin.settings.apiKey = "";
+            this.plugin.settings.deviceId = "";
+            this.plugin.settings.vaultName = "";
+            await this.plugin.saveSettings();
+            this.plugin.isDeviceRevoked = false;
+            this.plugin.revokedNoticeShown = false;
+            new Notice(t("notices.vault_disconnected"));
+            this.vaultsLoaded = false;
+            this.display();
+          })
+      );
+
+    if (this.plugin.isDeviceRevoked) {
+      new Setting(containerEl)
+        .setName(t("settings.register_device.name"))
+        .setDesc(t("settings.register_device.revoked_desc"))
+        .addButton((button) =>
+          button
+            .setButtonText(t("settings.register_device.button_reregister"))
+            .onClick(async () => {
+              button.setDisabled(true);
+              try {
+                const reg = await this.plugin.engine?.registerDevice();
+                if (reg) {
+                  this.plugin.settings.apiKey = reg.apiKey;
+                  this.plugin.settings.deviceId = reg.deviceId;
+                  await this.plugin.saveSettings();
+                  this.plugin.isDeviceRevoked = false;
+                  this.plugin.revokedNoticeShown = false;
+                  new Notice(t("notices.device_registered"));
+                  this.display();
+                }
+              } catch (err) {
+                new Notice(t("notices.register_failed", { error: String(err) }));
+              } finally {
+                button.setDisabled(false);
+              }
+            })
+        );
+    }
+  }
+
+  private renderVaultPicker(containerEl: HTMLElement, t: (key: string, params?: Record<string, string | number>) => string) {
+    if (!this.plugin.settings.authToken || !this.plugin.settings.serverUrl) {
+      containerEl.createEl("p", {
+        text: t("settings.vault_picker.configure_first"),
+        cls: "setting-item-description"
+      });
+      return;
+    }
+
+    // Load vaults button / auto-load
+    if (!this.vaultsLoaded && !this.vaultsLoading) {
+      new Setting(containerEl)
+        .setName(t("settings.vault_picker.load"))
+        .addButton((button) =>
+          button.setButtonText(t("settings.vault_picker.load_button")).onClick(() => {
+            this.loadVaults();
+          })
+        );
+      return;
+    }
+
+    if (this.vaultsLoading) {
+      containerEl.createEl("p", {
+        text: t("settings.vault_picker.loading"),
+        cls: "setting-item-description"
+      });
+      return;
+    }
+
+    // Vault list
+    if (this.vaults.length > 0) {
+      for (const vault of this.vaults) {
+        const date = new Date(vault.createdAt).toLocaleDateString();
+        new Setting(containerEl)
+          .setName(vault.name)
+          .setDesc(t("settings.vault_picker.vault_info", { devices: vault.deviceCount, date }))
+          .addButton((button) =>
+            button.setButtonText(t("settings.vault_picker.join")).onClick(async () => {
+              await this.joinVault(vault.name, t);
+            })
+          )
+          .addButton((button) =>
+            button
+              .setButtonText(t("settings.vault_picker.delete"))
+              .setWarning()
+              .onClick(async () => {
+                if (!confirm(t("settings.vault_picker.delete_confirm", { name: vault.name }))) return;
+                try {
+                  await this.plugin.engine?.deleteVault(vault.id);
+                  new Notice(t("notices.vault_deleted", { name: vault.name }));
+                  this.vaultsLoaded = false;
+                  this.loadVaults();
+                } catch (err) {
+                  new Notice(t("notices.vault_delete_failed", { error: String(err) }));
+                }
+              })
+          );
+      }
+    } else {
+      containerEl.createEl("p", {
+        text: t("settings.vault_picker.empty"),
+        cls: "setting-item-description"
+      });
+    }
+
+    // Create new vault
+    let newVaultName = "";
+    new Setting(containerEl)
+      .setName(t("settings.vault_picker.create_name"))
+      .addText((text) =>
+        text
+          .setPlaceholder(t("settings.vault_picker.create_placeholder"))
+          .onChange((value) => { newVaultName = value.trim(); })
+      )
+      .addButton((button) =>
+        button.setButtonText(t("settings.vault_picker.create_button")).onClick(async () => {
+          if (!newVaultName) return;
+          if (!this.plugin.settings.passphrase) {
+            new Notice(t("notices.passphrase_required"));
+            return;
+          }
+          button.setDisabled(true);
+          try {
+            await this.plugin.engine?.createVault(newVaultName);
+            await this.joinVault(newVaultName, t);
+          } catch (err) {
+            new Notice(t("notices.vault_create_failed", { error: String(err) }));
+          } finally {
+            button.setDisabled(false);
+          }
+        })
+      );
+  }
+
+  private async joinVault(vaultName: string, t: (key: string, params?: Record<string, string | number>) => string) {
+    if (!this.plugin.settings.passphrase) {
+      new Notice(t("notices.passphrase_required"));
+      return;
+    }
+    this.plugin.settings.vaultName = vaultName;
+    try {
+      const reg = await this.plugin.engine?.registerDevice();
+      if (reg) {
+        this.plugin.settings.apiKey = reg.apiKey;
+        this.plugin.settings.deviceId = reg.deviceId;
+        await this.plugin.saveSettings();
+        this.plugin.isDeviceRevoked = false;
+        this.plugin.revokedNoticeShown = false;
+        new Notice(t("notices.device_registered"));
+        this.display();
+      }
+    } catch (err) {
+      new Notice(t("notices.register_failed", { error: String(err) }));
+    }
+  }
+
+  private async loadVaults() {
+    this.vaultsLoading = true;
+    this.display();
+    try {
+      const res = await this.plugin.engine?.listVaults();
+      this.vaults = res?.vaults || [];
+      this.vaultsLoaded = true;
+    } catch (err) {
+      new Notice(this.plugin.t("notices.vault_load_failed", { error: String(err) }));
+      this.vaults = [];
+    } finally {
+      this.vaultsLoading = false;
+      this.display();
+    }
   }
 }

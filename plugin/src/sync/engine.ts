@@ -251,6 +251,43 @@ export class SyncEngine {
     return { apiKey: data.apiKey, deviceId: data.deviceId };
   }
 
+  private adminHeaders() {
+    return {
+      "x-auth-token": this.settings.authToken,
+      "content-type": "application/json"
+    };
+  }
+
+  async listVaults() {
+    if (!this.settings.authToken) throw new Error("Auth token is required");
+    return this.requestJson<{
+      vaults: Array<{ id: string; name: string; createdAt: number; deviceCount: number }>;
+    }>("/api/v1/vaults", { method: "GET", headers: this.adminHeaders() });
+  }
+
+  async createVault(name: string) {
+    if (!this.settings.authToken) throw new Error("Auth token is required");
+    return this.requestJson<{ id: string; name: string; createdAt: number }>(
+      "/api/v1/vaults",
+      { method: "POST", headers: this.adminHeaders(), body: { name } }
+    );
+  }
+
+  async deleteVault(vaultId: string) {
+    if (!this.settings.authToken) throw new Error("Auth token is required");
+    return this.requestJson<{ deleted: boolean }>(
+      `/api/v1/vaults/${vaultId}`,
+      { method: "DELETE", headers: this.adminHeaders() }
+    );
+  }
+
+  async listVaultDevices(vaultId: string) {
+    if (!this.settings.authToken) throw new Error("Auth token is required");
+    return this.requestJson<{
+      devices: Array<{ id: string; name: string; createdAt: number; revokedAt: number | null }>;
+    }>(`/api/v1/vaults/${vaultId}/devices`, { method: "GET", headers: this.adminHeaders() });
+  }
+
   async runOnce(options?: { forcePull?: boolean; profile?: RunProfile }) {
     if (!this.settings.apiKey || !this.settings.passphrase) return;
     const prevProfile = this.activeRunProfile;
