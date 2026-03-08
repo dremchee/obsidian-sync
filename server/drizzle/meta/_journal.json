@@ -15,6 +15,13 @@
       "when": 1772539200000,
       "tag": "0001_sync_operation_results",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772625600000,
+      "tag": "0002_vault_passphrase_hash",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,10 @@ export function hashApiKey(apiKey: string) {
   return createHash("sha256").update(`${apiKey}:${cfg.apiKeyPepper || ""}`).digest("hex");
 }
 
+export function hashPassphrase(passphrase: string) {
+  return createHash("sha256").update(passphrase).digest("hex");
+}
+
 export function newId(prefix: string) {
   return `${prefix}_${randomBytes(8).toString("hex")}`;
 }

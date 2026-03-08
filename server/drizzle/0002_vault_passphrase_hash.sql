@@ -1,0 +1,1 @@
+ALTER TABLE `vaults` ADD COLUMN `passphrase_hash` text;

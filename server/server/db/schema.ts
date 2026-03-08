@@ -3,6 +3,7 @@ import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core
 export const vaults = sqliteTable("vaults", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  passphraseHash: text("passphrase_hash"),
   createdAt: integer("created_at", { mode: "number" }).notNull()
 }, (t) => ({
   nameIdx: uniqueIndex("vaults_name_idx").on(t.name)
