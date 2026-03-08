@@ -1,5 +1,6 @@
 import { App, TAbstractFile, TFile } from "obsidian";
 import type { BootstrapPolicy, SyncSettings } from "../settings";
+import { SYNC_DEFAULT_RUN_PROFILE } from "./constants";
 import { encryptBytes, utf8Encode } from "./crypto";
 import { EngineClient } from "./engine/client";
 import { ensureDirectory, ensureParentDirectory, readFileBytes, writeBinaryFile } from "./engine/file-io";
@@ -31,14 +32,7 @@ export class SyncEngine {
   private readonly client: EngineClient;
   private readonly state = new SyncState();
   private readonly runner: SyncRunner;
-  private readonly defaultRunProfile: Required<RunProfile> = {
-    maxFilesPerCycle: 20,
-    fallbackScanChunkSize: 8,
-    opBatchSize: 10,
-    yieldEvery: 3,
-    maxBlobUploadConcurrency: 2,
-    pullLimit: 500
-  };
+  private readonly defaultRunProfile: Required<RunProfile> = SYNC_DEFAULT_RUN_PROFILE;
 
   constructor(app: App, settings: SyncSettings) {
     this.app = app;

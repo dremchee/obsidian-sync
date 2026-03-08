@@ -1,3 +1,5 @@
+import { SYNC_TIMERS } from "../constants";
+
 export async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
@@ -17,5 +19,5 @@ export async function runWithConcurrency<T>(
 }
 
 export async function yieldToUi() {
-  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => window.setTimeout(resolve, SYNC_TIMERS.uiYieldMs));
 }

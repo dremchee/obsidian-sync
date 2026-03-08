@@ -1,4 +1,5 @@
 import { createError, defineEventHandler, readBody } from "h3";
+import { SERVER_SYNC_LIMITS } from "#app/constants";
 import { hasBlob, readBlob } from "#app/utils/cas";
 import { requireDevice } from "#app/utils/auth";
 
@@ -13,8 +14,11 @@ export default defineEventHandler(async (event) => {
     return { items: [], missing: [] as string[] };
   }
 
-  if (hashes.length > 100) {
-    throw createError({ statusCode: 400, statusMessage: "Too many hashes (max 100)" });
+  if (hashes.length > SERVER_SYNC_LIMITS.blobBatchGetMaxHashes) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Too many hashes (max ${SERVER_SYNC_LIMITS.blobBatchGetMaxHashes})`
+    });
   }
 
   const normalized = Array.from(new Set(hashes.map((h) => String(h).trim().toLowerCase())));

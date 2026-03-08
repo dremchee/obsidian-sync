@@ -1,3 +1,5 @@
+import { SYNC_TIMERS } from "./constants";
+
 export type WsConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 export type WsClientOptions = {
@@ -114,8 +116,8 @@ export class SyncWebSocketClient {
   }
 
   private getReconnectDelay(): number {
-    const base = 1000;
-    const max = 60_000;
+    const base = SYNC_TIMERS.wsReconnectBaseDelayMs;
+    const max = SYNC_TIMERS.wsReconnectMaxDelayMs;
     const exp = Math.min(max, base * (2 ** this.reconnectAttempt));
     return Math.floor(Math.random() * (exp + 1));
   }
@@ -126,7 +128,7 @@ export class SyncWebSocketClient {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: "ping" }));
       }
-    }, 25_000);
+    }, SYNC_TIMERS.wsPingIntervalMs);
   }
 
   private stopPing() {

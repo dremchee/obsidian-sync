@@ -1,5 +1,6 @@
 import { TFile, type App } from "obsidian";
 import type { SyncSettings } from "../../settings";
+import { SYNC_LIMITS } from "../constants";
 import { collectFallbackOperations } from "./queue";
 import { applyRemoteEvent } from "./remote";
 import type { RemoteContext } from "./remote";
@@ -191,7 +192,7 @@ export class SyncRunner {
       builtOps.push({ pending, requestOp });
     }
 
-    const batchSize = this.activeRunProfile.opBatchSize || 10;
+    const batchSize = this.activeRunProfile.opBatchSize;
     let processed = 0;
     const pushContext: PushContext = {
       app: this.deps.app,
@@ -245,7 +246,7 @@ export class SyncRunner {
   private async pullRemoteChanges(force = false): Promise<PullMetrics> {
     const startedAt = performance.now();
     const now = Date.now();
-    const minPullIntervalMs = Math.max(10, this.deps.settings.intervalSec) * 1000;
+    const minPullIntervalMs = Math.max(SYNC_LIMITS.minPullIntervalSec, this.deps.settings.intervalSec) * 1000;
     if (!force && now - this.deps.state.lastPullAt < minPullIntervalMs) {
       return {
         skipped: true,
@@ -256,8 +257,11 @@ export class SyncRunner {
       };
     }
 
-    const limit = Math.max(1, Math.min(1000, this.deps.settings.pullBatchSize || this.activeRunProfile.pullLimit));
-    const maxPages = 20;
+    const limit = Math.max(
+      1,
+      Math.min(SYNC_LIMITS.maxPullBatchSize, this.deps.settings.pullBatchSize || this.activeRunProfile.pullLimit)
+    );
+    const maxPages = SYNC_LIMITS.maxPullPagesPerRun;
     let page = 0;
     let totalEvents = 0;
     let applied = 0;

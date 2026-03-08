@@ -1,5 +1,6 @@
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { defineEventHandler, readBody } from "h3";
+import { SERVER_SYNC_LIMITS } from "#app/constants";
 import { events, fileRevisions, syncCursors } from "#app/db/schema";
 import { requireDevice } from "#app/utils/auth";
 import { getOrmDb } from "#app/utils/db";
@@ -12,7 +13,10 @@ export default defineEventHandler(async (event) => {
     const requester = await requireDevice(event);
     const body = await readBody<{ afterEventId?: number; limit?: number; includeDeleted?: boolean }>(event);
     const after = Math.max(0, body?.afterEventId || 0);
-    const limit = Math.min(1000, Math.max(1, body?.limit || 200));
+    const limit = Math.min(
+      SERVER_SYNC_LIMITS.syncPullMaxLimit,
+      Math.max(1, body?.limit || SERVER_SYNC_LIMITS.syncPullDefaultLimit)
+    );
     const includeDeleted = body?.includeDeleted !== false;
 
     const db = getOrmDb();

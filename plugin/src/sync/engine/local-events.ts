@@ -1,7 +1,6 @@
 import { TAbstractFile, TFile } from "obsidian";
+import { SYNC_TIMERS } from "../constants";
 import { normalizePath } from "./utils";
-
-const REMOTE_EVENT_SUPPRESSION_TTL_MS = 30_000;
 
 export type RemoteWriteSuppression = {
   expectedMtime?: number;
@@ -34,7 +33,7 @@ export function markRemoteSuppressedPath(
   remoteWriteSuppressUntil.set(normalizedPath, {
     expectedMtime: opts?.expectedMtime,
     remainingPathEvents: Math.max(0, opts?.remainingPathEvents ?? 1),
-    expiresAt: Date.now() + REMOTE_EVENT_SUPPRESSION_TTL_MS
+    expiresAt: Date.now() + SYNC_TIMERS.remoteEventSuppressionTtlMs
   });
 }
 

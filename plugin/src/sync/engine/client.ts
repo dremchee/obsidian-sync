@@ -1,5 +1,6 @@
 import { requestUrl, type RequestUrlResponse } from "obsidian";
 import type { SyncSettings } from "../../settings";
+import { SYNC_LIMITS } from "../constants";
 import type { BatchBlobResponse, MissingBlobResponse } from "./types";
 import { sha256Hex } from "./utils";
 
@@ -140,7 +141,10 @@ export class EngineClient {
     const uniq = Array.from(new Set(hashes));
     if (!uniq.length) return out;
 
-    const batchSize = Math.max(1, Math.min(100, this.settings.blobBatchSize || 20));
+    const batchSize = Math.max(
+      1,
+      Math.min(SYNC_LIMITS.maxBlobBatchSize, this.settings.blobBatchSize || SYNC_LIMITS.defaultBlobBatchSize)
+    );
     for (let i = 0; i < uniq.length; i += batchSize) {
       const chunk = uniq.slice(i, i + batchSize);
       const res = await this.requestJson<BatchBlobResponse>("/api/v1/blobs/get", {
@@ -197,7 +201,7 @@ export class EngineClient {
   }
 
   private retryDelayMs(attempt: number): number {
-    const base = Math.max(100, this.settings.retryBaseMs || 500);
+    const base = Math.max(SYNC_LIMITS.minRetryBaseMs, this.settings.retryBaseMs || SYNC_LIMITS.defaultRetryBaseMs);
     const max = Math.max(base, this.settings.retryMaxMs || 30_000);
     const exp = Math.min(max, base * (2 ** attempt));
     return Math.floor(Math.random() * (exp + 1));

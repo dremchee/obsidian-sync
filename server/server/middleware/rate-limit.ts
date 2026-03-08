@@ -1,4 +1,5 @@
 import { defineEventHandler, getHeader, getRequestURL, type H3Event } from "h3";
+import { SERVER_SYNC_LIMITS } from "#app/constants";
 import { hashApiKey } from "#app/utils/auth";
 import { enforceRateLimit, getClientIp } from "#app/utils/rate-limit";
 
@@ -15,16 +16,16 @@ const RATE_LIMIT_RULES: RateLimitRule[] = [
   {
     match: (_event, method, path) => method === "POST" && path === "/api/v1/device/register",
     scope: "device.register.ip",
-    max: 10,
-    windowMs: 10 * 60 * 1000,
+    max: SERVER_SYNC_LIMITS.deviceRegisterMaxRequests,
+    windowMs: SERVER_SYNC_LIMITS.deviceRegisterWindowMs,
     message: "Too many device registrations. Try again later.",
     resolveKey: (_event, ip) => ip
   },
   {
     match: (_event, method, path) => method === "POST" && path === "/api/v1/sync/push",
     scope: "sync.push.client",
-    max: 120,
-    windowMs: 60 * 1000,
+    max: SERVER_SYNC_LIMITS.syncPushMaxRequests,
+    windowMs: SERVER_SYNC_LIMITS.syncPushWindowMs,
     message: "Too many sync push requests. Try again later.",
     resolveKey: (event, ip) => {
       const token = getBearerToken(event);

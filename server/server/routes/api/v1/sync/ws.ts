@@ -1,4 +1,5 @@
 import { defineWebSocketHandler } from "h3";
+import { SERVER_SYNC_LIMITS } from "#app/constants";
 import { hashApiKey } from "#app/utils/auth";
 import { getOrmDb } from "#app/utils/db";
 import { devices } from "#app/db/schema";
@@ -14,8 +15,6 @@ type PeerContext = {
 };
 
 const peerContexts = new WeakMap<object, PeerContext>();
-const AUTH_TIMEOUT_MS = 5000;
-
 function authenticateToken(token: string) {
   if (!token) return null;
   const hashed = hashApiKey(token);
@@ -39,7 +38,7 @@ export default defineWebSocketHandler({
       authTimer: setTimeout(() => {
         peer.send(JSON.stringify({ type: "error", message: "auth_timeout" }));
         peer.close(4001, "auth_timeout");
-      }, AUTH_TIMEOUT_MS)
+      }, SERVER_SYNC_LIMITS.wsAuthTimeoutMs)
     };
     peerContexts.set(peer, ctx);
   },
