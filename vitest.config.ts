@@ -4,7 +4,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "#app": path.resolve(__dirname, "server/server")
+      "#app": path.resolve(__dirname, "server/server"),
+      obsidian: path.resolve(__dirname, "test/shims/obsidian.ts")
     }
   },
   test: {
