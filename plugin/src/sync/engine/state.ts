@@ -2,6 +2,7 @@ import type { BootstrapPolicy } from "../../settings";
 import type { TFile } from "obsidian";
 import type { RemoteWriteSuppression } from "./local-events";
 import { enqueueUpsert, normalizePendingOperation } from "./queue";
+import { CURRENT_ENGINE_STATE_VERSION } from "./snapshot";
 import type { EngineStateSnapshot, PendingLocalOperation } from "./types";
 import { newOperationId, normalizePath } from "./utils";
 
@@ -112,6 +113,7 @@ export class SyncState {
 
   snapshot(): EngineStateSnapshot {
     return {
+      version: CURRENT_ENGINE_STATE_VERSION,
       lastEventId: this.lastEventId,
       pendingOperations: this.pendingOperations.filter((op) => op.source !== "scan").map((op) => ({ ...op })),
       dirtyPaths: [],

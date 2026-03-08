@@ -1,5 +1,6 @@
 import { Notice, Plugin, TAbstractFile, TFile, TFolder, requestUrl } from "obsidian";
 import { SyncEngine, type EngineStateSnapshot } from "./src/sync/engine";
+import { migrateEngineStateSnapshot } from "./src/sync/engine/snapshot";
 import { SyncWebSocketClient, type WsConnectionState } from "./src/sync/ws-client";
 import type { StartupSyncMode, SyncSettings } from "./src/settings";
 import { SyncSettingsTab } from "./src/ui/sync-settings-tab";
@@ -239,11 +240,11 @@ export default class CustomSyncPlugin extends Plugin {
       if (!raw.trim()) {
         return undefined;
       }
-      const parsed = JSON.parse(raw) as EngineStateSnapshot;
-      if (!parsed || typeof parsed !== "object") {
+      const parsed = migrateEngineStateSnapshot(JSON.parse(raw));
+      if (!parsed) {
         return undefined;
       }
-      return parsed;
+      return parsed as EngineStateSnapshot;
     } catch (err) {
       console.error(`[custom-sync] failed to load sync state from ${statePath}: ${err}`);
       return undefined;
@@ -255,7 +256,11 @@ export default class CustomSyncPlugin extends Plugin {
     try {
       await this.app.vault.adapter.write(
         statePath,
-        JSON.stringify(snapshot || { lastEventId: 0, uploadedBlobHashes: [], headRevisionByPath: {} }, null, 2)
+        JSON.stringify(
+          snapshot || { version: 2, lastEventId: 0, uploadedBlobHashes: [], headRevisionByPath: {} },
+          null,
+          2
+        )
       );
     } catch (err) {
       console.error(`[custom-sync] failed to save sync state to ${statePath}: ${err}`);

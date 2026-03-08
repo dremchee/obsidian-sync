@@ -83,6 +83,7 @@ export type RunProfile = {
 };
 
 export type EngineStateSnapshot = {
+  version: number;
   lastEventId: number;
   pendingOperations?: PendingLocalOperation[];
   dirtyPaths?: string[];
