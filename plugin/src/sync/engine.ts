@@ -52,7 +52,7 @@ export class SyncEngine {
       defaultRunProfile: this.defaultRunProfile,
       debugPerf: (message) => this.debugPerf(message),
       ensureDirectory: (dirPath) => this.ensureDirectory(dirPath),
-      markRemoteSuppressedPath: (path) => this.markRemoteSuppressedPath(path),
+      markRemoteSuppressedPath: (path, opts) => this.markRemoteSuppressedPath(path, opts),
       saveConflictCopy: (file, conflictPath) => this.saveConflictCopy(file, conflictPath),
       isRecoverablePayloadError: (err) => this.isRecoverablePayloadError(err),
       readAndEncryptFile: (file) => this.readAndEncryptFile(file),
@@ -176,7 +176,7 @@ export class SyncEngine {
     return shouldQueueLocalUpsert(this.state.remoteWriteSuppressUntil, this.state.pushedMtime, file);
   }
 
-  private markRemoteSuppressedPath(path: string) {
-    markRemoteSuppressedPath(this.state.remoteWriteSuppressUntil, path);
+  private markRemoteSuppressedPath(path: string, opts?: { expectedMtime?: number; remainingPathEvents?: number }) {
+    markRemoteSuppressedPath(this.state.remoteWriteSuppressUntil, path, opts);
   }
 }

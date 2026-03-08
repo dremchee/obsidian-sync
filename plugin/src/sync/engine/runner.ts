@@ -25,7 +25,7 @@ export type RunnerDeps = {
   defaultRunProfile: Required<RunProfile>;
   debugPerf: (message: string) => void;
   ensureDirectory: (dirPath: string) => Promise<void>;
-  markRemoteSuppressedPath: (path: string) => void;
+  markRemoteSuppressedPath: (path: string, opts?: { expectedMtime?: number; remainingPathEvents?: number }) => void;
   saveConflictCopy: (file: TFile, conflictPath: string) => Promise<void>;
   isRecoverablePayloadError: (err: unknown) => boolean;
   readAndEncryptFile: (file: TFile) => Promise<{ hash: string; bytes: Uint8Array }>;

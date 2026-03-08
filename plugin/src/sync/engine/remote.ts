@@ -14,7 +14,7 @@ export type RemoteContext = {
   downloadBlob: (hash: string) => Promise<Uint8Array>;
   saveConflictCopy: (file: TFile, conflictPath: string) => Promise<void>;
   ensureDirectory: (dirPath: string) => Promise<void>;
-  markRemoteSuppressedPath: (path: string) => void;
+  markRemoteSuppressedPath: (path: string, opts?: { expectedMtime?: number; remainingPathEvents?: number }) => void;
   debugPerf: (message: string) => void;
 };
 
@@ -114,9 +114,9 @@ async function applyRemoteDelete(ctx: RemoteContext, evt: PullEvent) {
     }
   }
 
-  ctx.markRemoteSuppressedPath(evt.path);
   if (existing instanceof TFile) {
     await ctx.app.vault.delete(existing);
+    ctx.markRemoteSuppressedPath(evt.path);
   }
   if (evt.revisionId) {
     ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);
@@ -173,8 +173,6 @@ async function applyRemoteRename(ctx: RemoteContext, evt: PullEvent) {
     }
   }
 
-  ctx.markRemoteSuppressedPath(prevPath);
-  ctx.markRemoteSuppressedPath(evt.path);
   const parentDir = evt.path.substring(0, evt.path.lastIndexOf("/"));
   if (parentDir) {
     await ctx.ensureDirectory(parentDir);
@@ -185,6 +183,8 @@ async function applyRemoteRename(ctx: RemoteContext, evt: PullEvent) {
       await ctx.app.vault.delete(target);
     }
     await ctx.app.vault.rename(source, evt.path);
+    ctx.markRemoteSuppressedPath(prevPath);
+    ctx.markRemoteSuppressedPath(evt.path);
     const stat = await ctx.app.vault.adapter.stat(evt.path);
     if (stat) {
       ctx.state.pushedMtime.set(evt.path, stat.mtime);
@@ -267,7 +267,6 @@ async function applyRemoteUpsert(
     }
   }
 
-  ctx.markRemoteSuppressedPath(evt.path);
   const parentDir = evt.path.substring(0, evt.path.lastIndexOf("/"));
   if (parentDir) {
     await ctx.ensureDirectory(parentDir);
@@ -277,6 +276,9 @@ async function applyRemoteUpsert(
   const stat = await ctx.app.vault.adapter.stat(evt.path);
   if (stat) {
     ctx.state.pushedMtime.set(evt.path, stat.mtime);
+    ctx.markRemoteSuppressedPath(evt.path, { expectedMtime: stat.mtime });
+  } else {
+    ctx.markRemoteSuppressedPath(evt.path);
   }
   if (evt.revisionId) {
     ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);

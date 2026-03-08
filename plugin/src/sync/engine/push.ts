@@ -8,7 +8,7 @@ export type PushContext = {
   app: App;
   state: SyncState;
   ensureDirectory: (dirPath: string) => Promise<void>;
-  markRemoteSuppressedPath: (path: string) => void;
+  markRemoteSuppressedPath: (path: string, opts?: { expectedMtime?: number; remainingPathEvents?: number }) => void;
   debugPerf: (message: string) => void;
 };
 

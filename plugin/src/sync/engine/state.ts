@@ -1,5 +1,6 @@
 import type { BootstrapPolicy } from "../../settings";
 import type { TFile } from "obsidian";
+import type { RemoteWriteSuppression } from "./local-events";
 import { enqueueUpsert, normalizePendingOperation } from "./queue";
 import type { EngineStateSnapshot, PendingLocalOperation } from "./types";
 import { newOperationId, normalizePath } from "./utils";
@@ -9,7 +10,7 @@ export class SyncState {
   readonly headRevisionByPath = new Map<string, string>();
   readonly pushedMtime = new Map<string, number>();
   readonly uploadedBlobHashes = new Set<string>();
-  readonly remoteWriteSuppressUntil = new Map<string, number>();
+  readonly remoteWriteSuppressUntil = new Map<string, RemoteWriteSuppression>();
   readonly bootstrapLocalPaths = new Set<string>();
   pendingOperations: PendingLocalOperation[] = [];
   initialSyncDone = false;
