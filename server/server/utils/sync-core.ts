@@ -32,6 +32,23 @@ function makeConflictPath(originalPath: string, deviceId: string, ts: number): s
   return `${originalPath} (conflict ${short} ${date})`;
 }
 
+function resolveAvailableConflictPath(db: AppDb, vaultId: string, originalPath: string, deviceId: string, ts: number) {
+  const basePath = makeConflictPath(originalPath, deviceId, ts);
+  let candidate = basePath;
+  let suffix = 2;
+  while (fileForPath(db, vaultId, candidate)) {
+    const lastDot = basePath.lastIndexOf(".");
+    const lastSlash = basePath.lastIndexOf("/");
+    if (lastDot > lastSlash + 1) {
+      candidate = `${basePath.slice(0, lastDot)} ${suffix}${basePath.slice(lastDot)}`;
+    } else {
+      candidate = `${basePath} ${suffix}`;
+    }
+    suffix += 1;
+  }
+  return candidate;
+}
+
 function fileForPath(db: AppDb, vaultId: string, p: string) {
   const row = db
     .select({
@@ -144,6 +161,37 @@ function recordConflict(
     conflictPath,
     createdAt: now
   }).run();
+}
+
+function createServerConflictCopy(args: {
+  db: AppDb;
+  vaultId: string;
+  sourcePath: string;
+  blobHash: string;
+  size: number | null;
+  deviceId: string;
+  ts: number;
+}) {
+  const conflictPath = resolveAvailableConflictPath(args.db, args.vaultId, args.sourcePath, args.deviceId, args.ts);
+  const conflictFileId = ensureFile(args.db, args.vaultId, conflictPath, args.ts);
+  const conflictHead = getHeadTs(args.db, conflictFileId);
+  const conflictRevisionId = insertRevision(args.db, {
+    fileId: conflictFileId,
+    path: conflictPath,
+    op: "upsert",
+    blobHash: args.blobHash,
+    size: args.size,
+    deviceId: args.deviceId,
+    ts: args.ts,
+    prevRevisionId: conflictHead?.id || null
+  });
+  upsertFileHead(args.db, conflictFileId, conflictRevisionId, false, args.ts);
+  insertEvent(args.db, args.vaultId, conflictFileId, conflictRevisionId, args.ts);
+  return {
+    conflictPath,
+    conflictFileId,
+    conflictRevisionId
+  };
 }
 
 type OpResultStatus = "applied" | "duplicate" | "ignored" | "conflict";
@@ -287,6 +335,34 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
       const incomingWins = !head || ts > head.ts || (ts === head.ts && deviceId > head.deviceId);
 
       if (staleBase) {
+        if (op === "upsert" && raw.blobHash) {
+          const conflictCopy = createServerConflictCopy({
+            db: tx,
+            vaultId,
+            sourcePath: p,
+            blobHash: raw.blobHash,
+            size: raw.size || null,
+            deviceId,
+            ts
+          });
+          recordConflict(tx, fileId, head!.id, conflictCopy.conflictRevisionId, conflictCopy.conflictPath, now);
+          appliedEvents.push({ fileId: conflictCopy.conflictFileId, revisionId: conflictCopy.conflictRevisionId });
+          setOpResult({
+            status: "conflict",
+            revisionId: conflictCopy.conflictRevisionId,
+            headRevisionId: head!.id,
+            conflictPath: conflictCopy.conflictPath
+          });
+          results.push({
+            operationId: opId,
+            status: "conflict",
+            revisionId: conflictCopy.conflictRevisionId,
+            headRevisionId: head!.id,
+            conflictPath: conflictCopy.conflictPath
+          });
+          continue;
+        }
+
         const rev = insertRevision(tx, {
           fileId,
           path: p,
@@ -297,7 +373,7 @@ export function applyOperations(vaultId: string, deviceId: string, ops: PushOper
           ts,
           prevRevisionId: raw.baseRevisionId || null
         });
-        const cPath = makeConflictPath(p, deviceId, ts);
+        const cPath = resolveAvailableConflictPath(tx, vaultId, p, deviceId, ts);
         recordConflict(tx, fileId, head!.id, rev, cPath, now);
         setOpResult({ status: "conflict", revisionId: rev, headRevisionId: head!.id, conflictPath: cPath });
         results.push({ operationId: opId, status: "conflict", revisionId: rev, headRevisionId: head!.id, conflictPath: cPath });
