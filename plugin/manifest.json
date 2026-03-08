@@ -1,5 +1,5 @@
 {
-  "id": "custom-self-hosted-sync",
+  "id": "vault-sync",
   "name": "Vault Sync",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
