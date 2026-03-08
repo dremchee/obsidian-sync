@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS: SyncSettings = {
   authToken: "",
   apiKey: "",
   deviceId: "",
-  vaultName: "default",
+  vaultName: "",
   passphrase: "",
   intervalSec: 30,
   maxConcurrentUploads: 2,
@@ -187,10 +187,16 @@ export default class CustomSyncPlugin extends Plugin {
       globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
-    this.pendingSync = true;
+    const canSync = Boolean(this.settings.apiKey || (this.settings.authToken && this.settings.vaultName));
+    if (canSync) {
+      this.pendingSync = true;
+      this.connectWebSocket();
+      this.scheduleSync();
+    } else {
+      this.pendingSync = false;
+      this.disconnectWebSocket();
+    }
     this.updateStatusBar();
-    this.connectWebSocket();
-    this.scheduleSync();
   }
 
   private schedulePersist() {
@@ -269,6 +275,7 @@ export default class CustomSyncPlugin extends Plugin {
   private scheduleSync(immediate = false) {
     if (!this.settings.syncEnabled) return;
     if (!this.engine || !this.settings.passphrase) return;
+    if (!this.settings.apiKey && !this.settings.vaultName) return;
     if (this.syncInProgress) return;
     if (this.syncTimer) return;
 
@@ -379,10 +386,7 @@ export default class CustomSyncPlugin extends Plugin {
   private async ensureDeviceRegistered(showNotice: boolean): Promise<boolean> {
     if (!this.engine) return false;
     if (this.settings.apiKey) return true;
-    if (!this.settings.authToken) {
-      if (showNotice) {
-        new Notice(this.t("notices.auth_token_missing"));
-      }
+    if (!this.settings.authToken || !this.settings.vaultName) {
       return false;
     }
     if (this.registerInProgress) return false;
