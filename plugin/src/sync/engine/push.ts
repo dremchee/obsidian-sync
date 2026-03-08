@@ -63,7 +63,7 @@ export async function buildPushOperation(
     path: pending.path,
     blobHash: payload.hash,
     size: payload.bytes.length,
-    clientTs: file.stat.mtime || clientTs,
+    clientTs: pending.source === "bootstrap" ? clientTs : file.stat.mtime || clientTs,
     baseRevisionId: ctx.state.headRevisionByPath.get(pending.path)
   };
 }

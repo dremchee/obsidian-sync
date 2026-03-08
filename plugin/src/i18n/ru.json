@@ -48,6 +48,11 @@
   "settings.startup_mode.off": "Выкл",
   "settings.startup_mode.immediate": "Сразу",
   "settings.startup_mode.smooth": "Плавный",
+  "settings.bootstrap_policy.name": "Политика первого синка",
+  "settings.bootstrap_policy.desc": "Используется только для первого синка на этом устройстве при подключении к существующему хранилищу.",
+  "settings.bootstrap_policy.merge": "Безопасное объединение",
+  "settings.bootstrap_policy.remote_wins": "Побеждает сервер",
+  "settings.bootstrap_policy.local_wins": "Побеждает локальная версия",
 
   "settings.server_url.name": "Адрес сервера",
   "settings.server_url.desc": "Базовый URL Sync API",

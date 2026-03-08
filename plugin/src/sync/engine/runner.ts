@@ -42,6 +42,9 @@ export class SyncRunner {
 
   async runOnce(options?: { forcePull?: boolean; profile?: RunProfile }) {
     if (!this.deps.settings.apiKey || !this.deps.settings.passphrase) return;
+    if (!this.deps.state.initialSyncDone && !this.deps.state.isNewVault && !this.deps.state.bootstrapPending) {
+      this.deps.state.beginBootstrap(this.deps.settings.bootstrapPolicy, this.deps.app.vault.getFiles());
+    }
     const prevProfile = this.activeRunProfile;
     this.activeRunProfile = {
       ...this.deps.defaultRunProfile,
@@ -52,14 +55,36 @@ export class SyncRunner {
       const pull = await this.pullRemoteChanges(Boolean(options?.forcePull));
 
       if (!this.deps.state.initialSyncDone) {
-        this.deps.state.initialSyncDone = true;
         if (!this.deps.state.isNewVault) {
-          this.deps.state.adoptBaseline(this.deps.app.vault.getFiles());
-          this.deps.debugPerf(`initial sync: pull-only (skipping push)`);
+          const bootstrapPolicy = this.deps.state.bootstrapPolicy || this.deps.settings.bootstrapPolicy;
+          if (bootstrapPolicy === "remote_wins") {
+            this.deps.state.adoptRemoteWinsBaseline(this.deps.app.vault.getFiles());
+            this.deps.state.completeBootstrap();
+            this.deps.debugPerf(`initial sync: remote_wins baseline adopted`);
+            const totalMs = Math.round(performance.now() - startedAt);
+            this.deps.debugPerf(
+              `run total=${totalMs}ms ` +
+              `pull=${pull.durationMs}ms(events=${pull.events},applied=${pull.applied},conflicts=${pull.conflicts}${pull.skipped ? ",skipped" : ""})`
+            );
+            return;
+          }
+
+          if (bootstrapPolicy === "local_wins") {
+            this.deps.state.queueBootstrapLocalFiles(this.deps.app.vault.getFiles());
+            this.deps.debugPerf(`initial sync: local_wins pull-first, pushing preserved local files`);
+          } else {
+            this.deps.state.adoptRemoteMergeBaseline(this.deps.app.vault.getFiles());
+            this.deps.debugPerf(`initial sync: merge pull-first, pushing local-only files`);
+          }
+
+          const push = await this.pushLocalChanges();
+          this.deps.state.completeBootstrap();
           const totalMs = Math.round(performance.now() - startedAt);
           this.deps.debugPerf(
             `run total=${totalMs}ms ` +
-            `pull=${pull.durationMs}ms(events=${pull.events},applied=${pull.applied},conflicts=${pull.conflicts}${pull.skipped ? ",skipped" : ""})`
+            `pull=${pull.durationMs}ms(events=${pull.events},applied=${pull.applied},conflicts=${pull.conflicts}${pull.skipped ? ",skipped" : ""}) ` +
+            `encrypt=${push.encryptMs}ms upload=${push.uploadMs}ms push=${push.pushMs}ms stagePushTotal=${push.durationMs}ms ` +
+            `ops=${push.operations} uploads=${push.uploads} batches=${push.batches} pushConflicts=${push.conflicts}`
           );
           return;
         }
@@ -67,6 +92,9 @@ export class SyncRunner {
       }
 
       const push = await this.pushLocalChanges();
+      if (!this.deps.state.initialSyncDone) {
+        this.deps.state.completeBootstrap();
+      }
       const totalMs = Math.round(performance.now() - startedAt);
 
       this.deps.debugPerf(
@@ -228,33 +256,10 @@ export class SyncRunner {
       };
     }
 
-    const data = await this.deps.client.requestJson<{ events: PullEvent[]; nextAfterEventId: number }>("/api/v1/sync/pull", {
-      method: "POST",
-      headers: this.deps.client.authHeaders(),
-      body: {
-        afterEventId: this.deps.state.lastEventId,
-        limit: Math.max(1, Math.min(1000, this.deps.settings.pullBatchSize || this.activeRunProfile.pullLimit)),
-        includeDeleted: true
-      }
-    });
-    this.deps.state.lastPullAt = Date.now();
-
-    for (const evt of data.events) {
-      if (!evt.revisionId) continue;
-      if (evt.op === "rename" && evt.prevPath) {
-        this.deps.state.headRevisionByPath.delete(evt.prevPath);
-      }
-      this.deps.state.headRevisionByPath.set(evt.path, evt.revisionId);
-    }
-
-    const batchedBlobs = await this.deps.client.downloadBlobsBatched(
-      data.events
-        .filter((evt) => !this.deps.settings.deviceId || evt.deviceId !== this.deps.settings.deviceId)
-        .filter((evt) => evt.op === "upsert")
-        .map((evt) => evt.blobHash)
-        .filter((h): h is string => Boolean(h))
-    );
-
+    const limit = Math.max(1, Math.min(1000, this.deps.settings.pullBatchSize || this.activeRunProfile.pullLimit));
+    const maxPages = 20;
+    let page = 0;
+    let totalEvents = 0;
     let applied = 0;
     let conflictCount = 0;
     const remoteContext: RemoteContext = {
@@ -267,31 +272,72 @@ export class SyncRunner {
       markRemoteSuppressedPath: this.deps.markRemoteSuppressedPath,
       debugPerf: this.deps.debugPerf
     };
-    for (const evt of data.events) {
-      if (this.deps.settings.deviceId && evt.deviceId === this.deps.settings.deviceId) {
-        continue;
-      }
-      try {
-        const remoteResult = await applyRemoteEvent(remoteContext, evt, batchedBlobs);
-        this.deps.state.pendingOperations = remoteResult.pendingOperations;
-        applied += 1;
-        if (remoteResult.wasConflict) conflictCount += 1;
-        if (applied % this.activeRunProfile.yieldEvery === 0) {
-          await this.deps.yieldToUi();
+
+    while (page < maxPages) {
+      const data = await this.deps.client.requestJson<{ events: PullEvent[]; nextAfterEventId: number }>("/api/v1/sync/pull", {
+        method: "POST",
+        headers: this.deps.client.authHeaders(),
+        body: {
+          afterEventId: this.deps.state.lastEventId,
+          limit,
+          includeDeleted: true
         }
-      } catch (err) {
-        if (this.deps.isRecoverablePayloadError(err)) {
-          console.warn(`[custom-sync] skipped corrupted payload for ${evt.path}: ${String(err)}`);
+      });
+      this.deps.state.lastPullAt = Date.now();
+
+      if (!data.events.length) {
+        break;
+      }
+
+      totalEvents += data.events.length;
+      for (const evt of data.events) {
+        if (!evt.revisionId) continue;
+        if (evt.op === "rename" && evt.prevPath) {
+          this.deps.state.headRevisionByPath.delete(evt.prevPath);
+        }
+        this.deps.state.headRevisionByPath.set(evt.path, evt.revisionId);
+      }
+
+      const batchedBlobs = await this.deps.client.downloadBlobsBatched(
+        data.events
+          .filter((evt) => !this.deps.settings.deviceId || evt.deviceId !== this.deps.settings.deviceId)
+          .filter((evt) => evt.op === "upsert")
+          .map((evt) => evt.blobHash)
+          .filter((h): h is string => Boolean(h))
+      );
+
+      for (const evt of data.events) {
+        if (this.deps.settings.deviceId && evt.deviceId === this.deps.settings.deviceId) {
           continue;
         }
-        throw err;
+        try {
+          const remoteResult = await applyRemoteEvent(remoteContext, evt, batchedBlobs);
+          this.deps.state.pendingOperations = remoteResult.pendingOperations;
+          applied += 1;
+          if (remoteResult.wasConflict) conflictCount += 1;
+          if (applied % this.activeRunProfile.yieldEvery === 0) {
+            await this.deps.yieldToUi();
+          }
+        } catch (err) {
+          if (this.deps.isRecoverablePayloadError(err)) {
+            console.warn(`[custom-sync] skipped corrupted payload for ${evt.path}: ${String(err)}`);
+            continue;
+          }
+          throw err;
+        }
       }
+
+      this.deps.state.lastEventId = data.nextAfterEventId;
+      page += 1;
+      if (data.events.length < limit) {
+        break;
+      }
+      await this.deps.yieldToUi();
     }
 
-    this.deps.state.lastEventId = data.nextAfterEventId;
     return {
       skipped: false,
-      events: data.events.length,
+      events: totalEvents,
       applied,
       conflicts: conflictCount,
       durationMs: Math.round(performance.now() - startedAt)

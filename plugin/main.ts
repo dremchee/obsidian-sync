@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS: SyncSettings = {
   syncEnabled: true,
   syncOnStartup: true,
   startupMode: "smooth",
+  bootstrapPolicy: "merge",
   serverUrl: "http://127.0.0.1:3243",
   authToken: "",
   apiKey: "",
@@ -156,11 +157,18 @@ export default class CustomSyncPlugin extends Plugin {
 
   private async loadPersistedData(): Promise<{ settings?: Partial<SyncSettings>; syncState?: EngineStateSnapshot }> {
     const raw = await this.loadData();
+    const syncState = await this.loadSyncStateFile();
     if (raw && typeof raw === "object" && "settings" in (raw as Record<string, unknown>)) {
       const data = raw as { settings?: Partial<SyncSettings>; syncState?: EngineStateSnapshot };
-      return data;
+      return {
+        settings: data.settings,
+        syncState
+      };
     }
-    return { settings: raw as Partial<SyncSettings> };
+    return {
+      settings: raw as Partial<SyncSettings>,
+      syncState
+    };
   }
 
   async loadSettings(persisted?: { settings?: Partial<SyncSettings> }) {
@@ -172,6 +180,9 @@ export default class CustomSyncPlugin extends Plugin {
       loaded.startupMode = loaded.syncOnStartup ? "smooth" : "off";
     }
     loaded.syncOnStartup = loaded.startupMode !== "off";
+    if (loaded.bootstrapPolicy !== "merge" && loaded.bootstrapPolicy !== "remote_wins" && loaded.bootstrapPolicy !== "local_wins") {
+      loaded.bootstrapPolicy = "merge";
+    }
     loaded.lwwPolicy = "hard";
     this.settings = loaded;
   }
@@ -209,9 +220,46 @@ export default class CustomSyncPlugin extends Plugin {
 
   private async persistPluginData() {
     await this.saveData({
-      settings: this.settings,
-      syncState: this.engine?.getStateSnapshot()
+      settings: this.settings
     });
+    await this.saveSyncStateFile(this.engine?.getStateSnapshot());
+  }
+
+  private getSyncStatePath() {
+    return `${this.app.vault.configDir}/plugins/${this.manifest.id}/state.json`;
+  }
+
+  private async loadSyncStateFile(): Promise<EngineStateSnapshot | undefined> {
+    const statePath = this.getSyncStatePath();
+    try {
+      if (!(await this.app.vault.adapter.exists(statePath))) {
+        return undefined;
+      }
+      const raw = await this.app.vault.adapter.read(statePath);
+      if (!raw.trim()) {
+        return undefined;
+      }
+      const parsed = JSON.parse(raw) as EngineStateSnapshot;
+      if (!parsed || typeof parsed !== "object") {
+        return undefined;
+      }
+      return parsed;
+    } catch (err) {
+      console.error(`[custom-sync] failed to load sync state from ${statePath}: ${err}`);
+      return undefined;
+    }
+  }
+
+  private async saveSyncStateFile(snapshot?: EngineStateSnapshot) {
+    const statePath = this.getSyncStatePath();
+    try {
+      await this.app.vault.adapter.write(
+        statePath,
+        JSON.stringify(snapshot || { lastEventId: 0, uploadedBlobHashes: [], headRevisionByPath: {} }, null, 2)
+      );
+    } catch (err) {
+      console.error(`[custom-sync] failed to save sync state to ${statePath}: ${err}`);
+    }
   }
 
   private markDirtyAndSchedule(file?: TAbstractFile) {

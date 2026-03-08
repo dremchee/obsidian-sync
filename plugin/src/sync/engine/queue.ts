@@ -17,7 +17,7 @@ export function normalizePendingOperation(
     path,
     prevPath: kind === "rename" ? prevPath : undefined,
     clientTs: Number.isFinite(op.clientTs) ? Math.max(0, Number(op.clientTs)) : Date.now(),
-    source: op.source === "scan" ? "scan" : "event"
+    source: op.source === "scan" || op.source === "bootstrap" ? op.source : "event"
   };
 }
 
@@ -25,7 +25,7 @@ export function enqueueUpsert(
   pendingOperations: PendingLocalOperation[],
   path: string,
   clientTs?: number,
-  source: "event" | "scan" = "event"
+  source: "event" | "scan" | "bootstrap" = "event"
 ) {
   const normalizedPath = normalizePath(path);
   if (!normalizedPath) return;

@@ -48,6 +48,11 @@
   "settings.startup_mode.off": "Off",
   "settings.startup_mode.immediate": "Immediate",
   "settings.startup_mode.smooth": "Smooth",
+  "settings.bootstrap_policy.name": "Initial sync policy",
+  "settings.bootstrap_policy.desc": "Used only for the first sync on this device when connecting to an existing vault.",
+  "settings.bootstrap_policy.merge": "Merge safely",
+  "settings.bootstrap_policy.remote_wins": "Remote wins",
+  "settings.bootstrap_policy.local_wins": "Local wins",
 
   "settings.server_url.name": "Server URL",
   "settings.server_url.desc": "Base URL of the Sync API",

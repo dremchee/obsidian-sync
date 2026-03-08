@@ -1,16 +1,19 @@
 import { App, Modal, Setting } from "obsidian";
+import type { BootstrapPolicy } from "../settings";
 
 type ModalMode = "join" | "create" | "delete";
 
 export interface VaultModalResult {
   vaultName: string;
   passphrase: string;
+  bootstrapPolicy: BootstrapPolicy;
 }
 
 export class VaultConnectModal extends Modal {
   private vaultName: string;
   private passphrase = "";
   private passphraseVisible = false;
+  private bootstrapPolicy: BootstrapPolicy;
   private readonly mode: ModalMode;
   private readonly onSubmit: (result: VaultModalResult) => void;
   private readonly t: (key: string, params?: Record<string, string | number>) => string;
@@ -20,6 +23,7 @@ export class VaultConnectModal extends Modal {
     opts: {
       mode: ModalMode;
       vaultName?: string;
+      bootstrapPolicy?: BootstrapPolicy;
       t: (key: string, params?: Record<string, string | number>) => string;
       onSubmit: (result: VaultModalResult) => void;
     }
@@ -27,6 +31,7 @@ export class VaultConnectModal extends Modal {
     super(app);
     this.mode = opts.mode;
     this.vaultName = opts.vaultName || "";
+    this.bootstrapPolicy = opts.bootstrapPolicy || "merge";
     this.t = opts.t;
     this.onSubmit = opts.onSubmit;
   }
@@ -65,7 +70,23 @@ export class VaultConnectModal extends Modal {
             }
           });
           return text;
-        });
+      });
+    }
+
+    if (this.mode === "join") {
+      new Setting(contentEl)
+        .setName(this.t("settings.bootstrap_policy.name"))
+        .setDesc(this.t("settings.bootstrap_policy.desc"))
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("merge", this.t("settings.bootstrap_policy.merge"))
+            .addOption("remote_wins", this.t("settings.bootstrap_policy.remote_wins"))
+            .addOption("local_wins", this.t("settings.bootstrap_policy.local_wins"))
+            .setValue(this.bootstrapPolicy)
+            .onChange((value) => {
+              this.bootstrapPolicy = value as BootstrapPolicy;
+            })
+        );
     }
 
     let passphraseInputEl: HTMLInputElement | null = null;
@@ -122,7 +143,7 @@ export class VaultConnectModal extends Modal {
   private submit() {
     if (!this.vaultName || !this.passphrase.trim()) return;
     this.close();
-    this.onSubmit({ vaultName: this.vaultName, passphrase: this.passphrase });
+    this.onSubmit({ vaultName: this.vaultName, passphrase: this.passphrase, bootstrapPolicy: this.bootstrapPolicy });
   }
 
   onClose() {

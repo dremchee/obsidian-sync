@@ -1,3 +1,5 @@
+import type { BootstrapPolicy } from "../../settings";
+
 export type SyncOperation = "upsert" | "delete" | "rename";
 
 export type PullEvent = {
@@ -36,7 +38,7 @@ export type PendingLocalOperation = {
   path: string;
   prevPath?: string;
   clientTs: number;
-  source?: "event" | "scan";
+  source?: "event" | "scan" | "bootstrap";
 };
 
 export type PushRequestOperation = {
@@ -87,5 +89,9 @@ export type EngineStateSnapshot = {
   uploadedBlobHashes: string[];
   headRevisionByPath: Record<string, string>;
   pushedMtimeByPath?: Record<string, number>;
+  initialSyncDone?: boolean;
   isNewVault?: boolean;
+  bootstrapPending?: boolean;
+  bootstrapPolicy?: BootstrapPolicy;
+  bootstrapLocalPaths?: string[];
 };

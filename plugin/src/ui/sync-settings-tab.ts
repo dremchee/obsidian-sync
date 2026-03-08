@@ -1,6 +1,6 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import type { SyncEngine } from "../sync/engine";
-import type { StartupSyncMode, SyncSettings } from "../settings";
+import type { BootstrapPolicy, StartupSyncMode, SyncSettings } from "../settings";
 import { VaultConnectModal } from "./create-vault-modal";
 
 const CONFLICT_RE = / \(conflict [a-f0-9]+ \d{4}-\d{2}-\d{2}\)/;
@@ -165,6 +165,21 @@ export class SyncSettingsTab extends PluginSettingTab {
           .setValue(this.plugin.settings.startupMode)
           .onChange(async (value) => {
             this.plugin.setStartupMode(value as StartupSyncMode);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("settings.bootstrap_policy.name"))
+      .setDesc(t("settings.bootstrap_policy.desc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("merge", t("settings.bootstrap_policy.merge"))
+          .addOption("remote_wins", t("settings.bootstrap_policy.remote_wins"))
+          .addOption("local_wins", t("settings.bootstrap_policy.local_wins"))
+          .setValue(this.plugin.settings.bootstrapPolicy)
+          .onChange(async (value) => {
+            this.plugin.settings.bootstrapPolicy = value as BootstrapPolicy;
             await this.plugin.saveSettings();
           })
       );
@@ -385,6 +400,7 @@ export class SyncSettingsTab extends PluginSettingTab {
         button.setButtonText(t("settings.vault_picker.create_button")).onClick(() => {
           new VaultConnectModal(this.app, {
             mode: "create",
+            bootstrapPolicy: this.plugin.settings.bootstrapPolicy,
             t,
             onSubmit: async (result) => {
               this.plugin.settings.passphrase = result.passphrase;
@@ -418,6 +434,7 @@ export class SyncSettingsTab extends PluginSettingTab {
     new VaultConnectModal(this.app, {
       mode: "join",
       vaultName: vault.name,
+      bootstrapPolicy: this.plugin.settings.bootstrapPolicy,
       t,
       onSubmit: async (result) => {
         try {
@@ -430,6 +447,7 @@ export class SyncSettingsTab extends PluginSettingTab {
         this.plugin.settings.vaultName = result.vaultName;
         try {
           this.plugin.engine?.resetState();
+          this.plugin.engine?.beginBootstrap(result.bootstrapPolicy);
           const reg = await this.plugin.engine?.registerDevice();
           if (reg) {
             this.plugin.settings.apiKey = reg.apiKey;

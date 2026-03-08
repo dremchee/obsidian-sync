@@ -1,5 +1,5 @@
 import { App, TAbstractFile, TFile } from "obsidian";
-import type { SyncSettings } from "../settings";
+import type { BootstrapPolicy, SyncSettings } from "../settings";
 import { encryptBytes, utf8Encode } from "./crypto";
 import { EngineClient } from "./engine/client";
 import { SyncRunner } from "./engine/runner";
@@ -107,6 +107,10 @@ export class SyncEngine {
     this.state.isNewVault = value;
   }
 
+  beginBootstrap(policy: BootstrapPolicy) {
+    this.state.beginBootstrap(policy, this.app.vault.getFiles());
+  }
+
   resetState() {
     this.state.reset();
   }
@@ -203,6 +207,13 @@ export class SyncEngine {
       const node = this.app.vault.getAbstractFileByPath(path);
       if (node instanceof TAbstractFile && !(node instanceof TFile)) {
         this.state.pushedMtime.delete(path);
+      }
+    }
+
+    for (const path of Array.from(this.state.bootstrapLocalPaths.values())) {
+      const node = this.app.vault.getAbstractFileByPath(path);
+      if (node instanceof TAbstractFile && !(node instanceof TFile)) {
+        this.state.bootstrapLocalPaths.delete(path);
       }
     }
   }

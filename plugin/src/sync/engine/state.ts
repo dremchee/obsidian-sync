@@ -1,5 +1,6 @@
+import type { BootstrapPolicy } from "../../settings";
 import type { TFile } from "obsidian";
-import { normalizePendingOperation } from "./queue";
+import { enqueueUpsert, normalizePendingOperation } from "./queue";
 import type { EngineStateSnapshot, PendingLocalOperation } from "./types";
 import { newOperationId, normalizePath } from "./utils";
 
@@ -9,9 +10,12 @@ export class SyncState {
   readonly pushedMtime = new Map<string, number>();
   readonly uploadedBlobHashes = new Set<string>();
   readonly remoteWriteSuppressUntil = new Map<string, number>();
+  readonly bootstrapLocalPaths = new Set<string>();
   pendingOperations: PendingLocalOperation[] = [];
   initialSyncDone = false;
   isNewVault = false;
+  bootstrapPending = false;
+  bootstrapPolicy: BootstrapPolicy | null = null;
   lastPullAt = 0;
   scanCursor = 0;
 
@@ -21,9 +25,12 @@ export class SyncState {
     this.pushedMtime.clear();
     this.uploadedBlobHashes.clear();
     this.remoteWriteSuppressUntil.clear();
+    this.bootstrapLocalPaths.clear();
     this.pendingOperations = [];
     this.initialSyncDone = false;
     this.isNewVault = false;
+    this.bootstrapPending = false;
+    this.bootstrapPolicy = null;
     this.lastPullAt = 0;
     this.scanCursor = 0;
   }
@@ -34,6 +41,7 @@ export class SyncState {
     if (Number.isFinite(snapshot.lastEventId)) {
       this.lastEventId = Math.max(0, Number(snapshot.lastEventId));
     }
+    this.initialSyncDone = Boolean(snapshot.initialSyncDone);
 
     const pendingOperations: PendingLocalOperation[] = [];
     if (Array.isArray(snapshot.pendingOperations)) {
@@ -81,6 +89,24 @@ export class SyncState {
     if (snapshot.isNewVault) {
       this.isNewVault = true;
     }
+
+    this.bootstrapPending = Boolean(snapshot.bootstrapPending);
+    this.bootstrapPolicy =
+      snapshot.bootstrapPolicy === "merge" ||
+      snapshot.bootstrapPolicy === "remote_wins" ||
+      snapshot.bootstrapPolicy === "local_wins"
+        ? snapshot.bootstrapPolicy
+        : null;
+
+    this.bootstrapLocalPaths.clear();
+    if (Array.isArray(snapshot.bootstrapLocalPaths)) {
+      for (const path of snapshot.bootstrapLocalPaths) {
+        const normalizedPath = normalizePath(path);
+        if (normalizedPath) {
+          this.bootstrapLocalPaths.add(normalizedPath);
+        }
+      }
+    }
   }
 
   snapshot(): EngineStateSnapshot {
@@ -91,14 +117,78 @@ export class SyncState {
       uploadedBlobHashes: Array.from(this.uploadedBlobHashes),
       headRevisionByPath: Object.fromEntries(this.headRevisionByPath.entries()),
       pushedMtimeByPath: Object.fromEntries(this.pushedMtime.entries()),
-      isNewVault: this.isNewVault || undefined
+      initialSyncDone: this.initialSyncDone || undefined,
+      isNewVault: this.isNewVault || undefined,
+      bootstrapPending: this.bootstrapPending || undefined,
+      bootstrapPolicy: this.bootstrapPolicy || undefined,
+      bootstrapLocalPaths: this.bootstrapLocalPaths.size ? Array.from(this.bootstrapLocalPaths) : undefined
     };
   }
 
-  adoptBaseline(files: TFile[]) {
+  beginBootstrap(policy: BootstrapPolicy, files: TFile[]) {
+    this.bootstrapPending = true;
+    this.bootstrapPolicy = policy;
+    this.bootstrapLocalPaths.clear();
+    for (const file of files) {
+      this.bootstrapLocalPaths.add(file.path);
+    }
+  }
+
+  completeBootstrap() {
+    this.initialSyncDone = true;
+    this.bootstrapPending = false;
+    this.bootstrapPolicy = null;
+    this.bootstrapLocalPaths.clear();
+  }
+
+  isBootstrapLocalPath(path: string) {
+    const normalizedPath = normalizePath(path);
+    return Boolean(normalizedPath && this.bootstrapLocalPaths.has(normalizedPath));
+  }
+
+  adoptRemoteMergeBaseline(files: TFile[]) {
     this.pendingOperations = this.pendingOperations.filter((op) => op.source !== "scan");
     for (const file of files) {
-      this.pushedMtime.set(file.path, file.stat.mtime);
+      if (this.headRevisionByPath.has(file.path)) {
+        this.pushedMtime.set(file.path, file.stat.mtime);
+        continue;
+      }
+
+      enqueueUpsert(this.pendingOperations, file.path, file.stat.mtime, "scan");
+    }
+  }
+
+  adoptRemoteWinsBaseline(files: TFile[]) {
+    this.pendingOperations = this.pendingOperations.filter((op) => op.source !== "scan" && op.source !== "bootstrap");
+    for (const file of files) {
+      if (this.headRevisionByPath.has(file.path)) {
+        this.pushedMtime.set(file.path, file.stat.mtime);
+        continue;
+      }
+
+      if (!this.isBootstrapLocalPath(file.path)) {
+        enqueueUpsert(this.pendingOperations, file.path, file.stat.mtime, "scan");
+      }
+    }
+  }
+
+  queueBootstrapLocalFiles(files: TFile[]) {
+    this.pendingOperations = this.pendingOperations.filter((op) => op.source !== "scan" && op.source !== "bootstrap");
+    for (const file of files) {
+      const knownMtime = this.pushedMtime.get(file.path);
+      if (this.isBootstrapLocalPath(file.path)) {
+        if (knownMtime !== file.stat.mtime) {
+          enqueueUpsert(this.pendingOperations, file.path, Date.now(), "bootstrap");
+        }
+        continue;
+      }
+
+      if (this.headRevisionByPath.has(file.path)) {
+        this.pushedMtime.set(file.path, file.stat.mtime);
+        continue;
+      }
+
+      enqueueUpsert(this.pendingOperations, file.path, file.stat.mtime, "scan");
     }
   }
 }

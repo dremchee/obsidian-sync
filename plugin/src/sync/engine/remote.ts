@@ -73,6 +73,15 @@ function requeueConflictPath(
   return nextPendingOperations;
 }
 
+function hasBootstrapConflict(state: SyncState, path: string) {
+  return state.bootstrapPending && state.bootstrapPolicy === "merge" && state.isBootstrapLocalPath(path);
+}
+
+function queueBootstrapLocalUpsert(state: SyncState, path: string) {
+  enqueueUpsert(state.pendingOperations, path, Date.now(), "bootstrap");
+  state.pushedMtime.delete(path);
+}
+
 async function applyRemoteDelete(ctx: RemoteContext, evt: PullEvent) {
   let wasConflict = false;
   ctx.state.pendingOperations = dropScanOperationsForPaths(ctx.state.pendingOperations, [evt.path]);
@@ -82,11 +91,23 @@ async function applyRemoteDelete(ctx: RemoteContext, evt: PullEvent) {
     ctx.state.pushedMtime,
     [evt.path]
   );
-  if (hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false })) {
-    const f = ctx.app.vault.getAbstractFileByPath(evt.path);
-    if (f instanceof TFile) {
+  const existing = ctx.app.vault.getAbstractFileByPath(evt.path);
+  if (ctx.state.bootstrapPending && ctx.state.bootstrapPolicy === "local_wins" && existing instanceof TFile && ctx.state.isBootstrapLocalPath(evt.path)) {
+    if (evt.revisionId) {
+      ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);
+    }
+    queueBootstrapLocalUpsert(ctx.state, evt.path);
+    ctx.debugPerf(`bootstrap local_wins preserved deleted path=${evt.path}`);
+    return { pendingOperations: ctx.state.pendingOperations, wasConflict: false };
+  }
+
+  if (
+    hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false }) ||
+    hasBootstrapConflict(ctx.state, evt.path)
+  ) {
+    if (existing instanceof TFile) {
       const conflictPath = makeConflictPath(evt.path, ctx.settings.deviceId || "local", Date.now());
-      await ctx.saveConflictCopy(f, conflictPath);
+      await ctx.saveConflictCopy(existing, conflictPath);
       ctx.debugPerf(`conflict on delete: saved ${evt.path} -> ${conflictPath}`);
       ctx.state.pendingOperations = requeueConflictPath(ctx.state.pendingOperations, ctx.state.pushedMtime, evt.path, conflictPath);
       wasConflict = true;
@@ -94,9 +115,8 @@ async function applyRemoteDelete(ctx: RemoteContext, evt: PullEvent) {
   }
 
   ctx.markRemoteSuppressedPath(evt.path);
-  const f = ctx.app.vault.getAbstractFileByPath(evt.path);
-  if (f instanceof TFile) {
-    await ctx.app.vault.delete(f);
+  if (existing instanceof TFile) {
+    await ctx.app.vault.delete(existing);
   }
   if (evt.revisionId) {
     ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);
@@ -119,12 +139,30 @@ async function applyRemoteRename(ctx: RemoteContext, evt: PullEvent) {
     ctx.state.pushedMtime,
     [prevPath, evt.path]
   );
+  const source = ctx.app.vault.getAbstractFileByPath(prevPath);
+  const target = ctx.app.vault.getAbstractFileByPath(evt.path);
+  if (ctx.state.bootstrapPending && ctx.state.bootstrapPolicy === "local_wins") {
+    if (source instanceof TFile && ctx.state.isBootstrapLocalPath(prevPath)) {
+      queueBootstrapLocalUpsert(ctx.state, prevPath);
+      ctx.debugPerf(`bootstrap local_wins preserved rename source=${prevPath}`);
+      return { pendingOperations: ctx.state.pendingOperations, wasConflict: false };
+    }
+    if (target instanceof TFile && ctx.state.isBootstrapLocalPath(evt.path)) {
+      if (evt.revisionId) {
+        ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);
+      }
+      queueBootstrapLocalUpsert(ctx.state, evt.path);
+      ctx.debugPerf(`bootstrap local_wins preserved rename target=${evt.path}`);
+      return { pendingOperations: ctx.state.pendingOperations, wasConflict: false };
+    }
+  }
+
   if (
     hasPendingOperationForPath(ctx.state.pendingOperations, prevPath, { includeScan: false }) ||
-    hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false })
+    hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false }) ||
+    hasBootstrapConflict(ctx.state, prevPath) ||
+    hasBootstrapConflict(ctx.state, evt.path)
   ) {
-    const source = ctx.app.vault.getAbstractFileByPath(prevPath);
-    const target = ctx.app.vault.getAbstractFileByPath(evt.path);
     const conflictSource = source instanceof TFile ? source : target instanceof TFile ? target : null;
     if (conflictSource) {
       const conflictPath = makeConflictPath(conflictSource.path, ctx.settings.deviceId || "local", Date.now());
@@ -135,8 +173,6 @@ async function applyRemoteRename(ctx: RemoteContext, evt: PullEvent) {
     }
   }
 
-  const source = ctx.app.vault.getAbstractFileByPath(prevPath);
-  const target = ctx.app.vault.getAbstractFileByPath(evt.path);
   ctx.markRemoteSuppressedPath(prevPath);
   ctx.markRemoteSuppressedPath(evt.path);
   const parentDir = evt.path.substring(0, evt.path.lastIndexOf("/"));
@@ -202,10 +238,25 @@ async function applyRemoteUpsert(
         [evt.path]
       );
       ctx.state.pushedMtime.set(existing.path, existing.stat.mtime);
+      if (evt.revisionId) {
+        ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);
+      }
       return { pendingOperations: ctx.state.pendingOperations, wasConflict: false };
     }
 
-    if (hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false })) {
+    if (ctx.state.bootstrapPending && ctx.state.bootstrapPolicy === "local_wins" && ctx.state.isBootstrapLocalPath(evt.path)) {
+      if (evt.revisionId) {
+        ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);
+      }
+      queueBootstrapLocalUpsert(ctx.state, evt.path);
+      ctx.debugPerf(`bootstrap local_wins preserved upsert path=${evt.path}`);
+      return { pendingOperations: ctx.state.pendingOperations, wasConflict: false };
+    }
+
+    if (
+      hasPendingOperationForPath(ctx.state.pendingOperations, evt.path, { includeScan: false }) ||
+      hasBootstrapConflict(ctx.state, evt.path)
+    ) {
       const conflictPath = makeConflictPath(evt.path, ctx.settings.deviceId || "local", Date.now());
       await ctx.saveConflictCopy(existing, conflictPath);
       ctx.debugPerf(`conflict on pull: saved ${evt.path} -> ${conflictPath}`);
