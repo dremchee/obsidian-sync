@@ -47,4 +47,64 @@ describe("EngineClient blob batching", () => {
     expect(Array.from(result.keys())).toEqual([hashA, hashB]);
     expect(Array.from(result.values()).map((bytes) => new TextDecoder().decode(bytes))).toEqual(["A", "B"]);
   });
+
+  it("reduces batch size after deferred responses", async () => {
+    const hashA = await sha256Hex(new TextEncoder().encode("A"));
+    const hashB = await sha256Hex(new TextEncoder().encode("B"));
+    const hashC = await sha256Hex(new TextEncoder().encode("C"));
+    const client = new EngineClient({
+      serverUrl: "http://127.0.0.1:3243",
+      apiKey: "api_key",
+      authToken: "",
+      vaultName: "",
+      deviceId: "",
+      passphrase: "",
+      intervalSec: 30,
+      maxConcurrentUploads: 2,
+      pullBatchSize: 100,
+      blobBatchSize: 3,
+      retryBaseMs: 500,
+      retryMaxMs: 30_000,
+      lwwPolicy: "hard",
+      enableWebSocket: true,
+      debugPerfLogs: false,
+      syncEnabled: true,
+      syncOnStartup: true,
+      startupMode: "smooth",
+      bootstrapPolicy: "merge"
+    }, () => {}) as never;
+
+    const requestJson = vi.spyOn(client, "requestJson");
+    requestJson
+      .mockResolvedValueOnce({
+        items: [{ hash: hashA, dataBase64: btoa("A") }],
+        missing: [],
+        deferred: [hashB, hashC]
+      })
+      .mockResolvedValueOnce({
+        items: [
+          { hash: hashB, dataBase64: btoa("B") },
+          { hash: hashC, dataBase64: btoa("C") }
+        ],
+        missing: [],
+        deferred: []
+      });
+
+    await client.downloadBlobsBatched([hashA, hashB, hashC]);
+
+    expect(requestJson).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/blobs/get",
+      expect.objectContaining({
+        body: { hashes: [hashA, hashB, hashC] }
+      })
+    );
+    expect(requestJson).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/blobs/get",
+      expect.objectContaining({
+        body: { hashes: [hashB, hashC] }
+      })
+    );
+  });
 });

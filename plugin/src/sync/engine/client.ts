@@ -141,10 +141,11 @@ export class EngineClient {
     const pending = Array.from(new Set(hashes));
     if (!pending.length) return out;
 
-    const batchSize = Math.max(
+    const configuredBatchSize = Math.max(
       1,
       Math.min(SYNC_LIMITS.maxBlobBatchSize, this.settings.blobBatchSize || SYNC_LIMITS.defaultBlobBatchSize)
     );
+    let batchSize = configuredBatchSize;
     while (pending.length) {
       const chunk = pending.splice(0, batchSize);
       const res = await this.requestJson<BatchBlobResponse>("/api/v1/blobs/get", {
@@ -158,7 +159,12 @@ export class EngineClient {
         out.set(item.hash, bytes);
       }
       if (Array.isArray(res.deferred) && res.deferred.length) {
+        batchSize = Math.max(1, Math.min(batchSize - 1, Math.ceil(chunk.length / 2)));
         pending.unshift(...res.deferred);
+        continue;
+      }
+      if (batchSize < configuredBatchSize) {
+        batchSize = Math.min(configuredBatchSize, batchSize + 1);
       }
     }
 
