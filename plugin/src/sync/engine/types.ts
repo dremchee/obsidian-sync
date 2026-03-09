@@ -1,4 +1,5 @@
 import type { BootstrapPolicy } from "../../settings";
+import type { BlobBatchItem } from "../../../../shared/blob-batch";
 
 export type SyncOperation = "upsert" | "delete" | "rename";
 
@@ -16,9 +17,9 @@ export type PullEvent = {
 };
 
 export type BatchBlobResponse = {
-  items: Array<{ hash: string; dataBase64: string }>;
+  items: BlobBatchItem[];
   missing: string[];
-  deferred?: string[];
+  deferred: string[];
 };
 
 export type MissingBlobResponse = {

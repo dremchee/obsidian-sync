@@ -3,6 +3,7 @@ import type { SyncSettings } from "../../settings";
 import { SYNC_LIMITS } from "../constants";
 import type { BatchBlobResponse, MissingBlobResponse } from "./types";
 import { sha256Hex } from "./utils";
+import { parseBlobBatchPayload } from "../../../../shared/blob-batch";
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -148,17 +149,16 @@ export class EngineClient {
     let batchSize = configuredBatchSize;
     while (pending.length) {
       const chunk = pending.splice(0, batchSize);
-      const res = await this.requestJson<BatchBlobResponse>("/api/v1/blobs/get", {
+      const res = this.parseBlobBatchResponse(await this.requestBinaryResponse("/api/v1/blobs/get", {
         method: "POST",
         headers: this.authHeaders(),
         body: { hashes: chunk }
-      });
-      for (const item of res.items || []) {
-        const bytes = this.fromB64(item.dataBase64);
-        await this.verifyBlobHash(item.hash, bytes);
-        out.set(item.hash, bytes);
+      }));
+      for (const item of res.items) {
+        await this.verifyBlobHash(item.hash, item.bytes);
+        out.set(item.hash, item.bytes);
       }
-      if (Array.isArray(res.deferred) && res.deferred.length) {
+      if (res.deferred.length) {
         batchSize = Math.max(1, Math.min(batchSize - 1, Math.ceil(chunk.length / 2)));
         pending.unshift(...res.deferred);
         continue;
@@ -236,22 +236,33 @@ export class EngineClient {
   }
 
   private async requestBinary(path: string): Promise<Uint8Array> {
-    return this.withRetry(`GET ${path}`, async () => {
+    return this.requestBinaryResponse(path, {
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${this.settings.apiKey}`
+      }
+    });
+  }
+
+  private async requestBinaryResponse(
+    path: string,
+    init: { method?: string; headers?: Record<string, string>; body?: unknown }
+  ): Promise<Uint8Array> {
+    return this.withRetry(`${init.method || "GET"} ${path}`, async () => {
       try {
         const res: RequestUrlResponse = await requestUrl({
           url: this.endpoint(path),
-          method: "GET",
-          headers: {
-            authorization: `Bearer ${this.settings.apiKey}`
-          },
+          method: init.method || "GET",
+          headers: init.headers,
+          body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
           throw: false
         });
         if (res.status >= 400) {
-          this.classifyHttpError(res.status, res.text, `GET ${path}`);
+          this.classifyHttpError(res.status, res.text, `${init.method || "GET"} ${path}`);
         }
         return new Uint8Array(res.arrayBuffer);
       } catch (err) {
-        throw this.parseNetworkError(err, `GET ${path}`);
+        throw this.parseNetworkError(err, `${init.method || "GET"} ${path}`);
       }
     });
   }
@@ -277,11 +288,8 @@ export class EngineClient {
     });
   }
 
-  private fromB64(s: string): Uint8Array {
-    const binary = atob(s);
-    const out = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-    return out;
+  private parseBlobBatchResponse(payload: Uint8Array): BatchBlobResponse {
+    return parseBlobBatchPayload(payload);
   }
 
   private async verifyBlobHash(expectedHash: string, bytes: Uint8Array) {

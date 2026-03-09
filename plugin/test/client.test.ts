@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { EngineClient } from "../src/sync/engine/client";
 import { sha256Hex } from "../src/sync/engine/utils";
+import { encodeBlobBatchPayload } from "../../shared/blob-batch";
 
 describe("EngineClient blob batching", () => {
   it("retries deferred blob hashes from batch responses", async () => {
@@ -28,22 +29,24 @@ describe("EngineClient blob batching", () => {
       bootstrapPolicy: "merge"
     }, () => {}) as never;
 
-    const requestJson = vi.spyOn(client, "requestJson");
-    requestJson
-      .mockResolvedValueOnce({
-        items: [{ hash: hashA, dataBase64: btoa("A") }],
+    const requestBinaryResponse = vi.spyOn(client as never as {
+      requestBinaryResponse: (path: string, init: unknown) => Promise<Uint8Array>;
+    }, "requestBinaryResponse");
+    requestBinaryResponse
+      .mockResolvedValueOnce(encodeBlobBatchPayload({
+        items: [{ hash: hashA, bytes: new TextEncoder().encode("A") }],
         missing: [],
         deferred: [hashB]
-      })
-      .mockResolvedValueOnce({
-        items: [{ hash: hashB, dataBase64: btoa("B") }],
+      }))
+      .mockResolvedValueOnce(encodeBlobBatchPayload({
+        items: [{ hash: hashB, bytes: new TextEncoder().encode("B") }],
         missing: [],
         deferred: []
-      });
+      }));
 
     const result = await client.downloadBlobsBatched([hashA, hashB]);
 
-    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requestBinaryResponse).toHaveBeenCalledTimes(2);
     expect(Array.from(result.keys())).toEqual([hashA, hashB]);
     expect(Array.from(result.values()).map((bytes) => new TextDecoder().decode(bytes))).toEqual(["A", "B"]);
   });
@@ -74,32 +77,34 @@ describe("EngineClient blob batching", () => {
       bootstrapPolicy: "merge"
     }, () => {}) as never;
 
-    const requestJson = vi.spyOn(client, "requestJson");
-    requestJson
-      .mockResolvedValueOnce({
-        items: [{ hash: hashA, dataBase64: btoa("A") }],
+    const requestBinaryResponse = vi.spyOn(client as never as {
+      requestBinaryResponse: (path: string, init: { body: { hashes: string[] } }) => Promise<Uint8Array>;
+    }, "requestBinaryResponse");
+    requestBinaryResponse
+      .mockResolvedValueOnce(encodeBlobBatchPayload({
+        items: [{ hash: hashA, bytes: new TextEncoder().encode("A") }],
         missing: [],
         deferred: [hashB, hashC]
-      })
-      .mockResolvedValueOnce({
+      }))
+      .mockResolvedValueOnce(encodeBlobBatchPayload({
         items: [
-          { hash: hashB, dataBase64: btoa("B") },
-          { hash: hashC, dataBase64: btoa("C") }
+          { hash: hashB, bytes: new TextEncoder().encode("B") },
+          { hash: hashC, bytes: new TextEncoder().encode("C") }
         ],
         missing: [],
         deferred: []
-      });
+      }));
 
     await client.downloadBlobsBatched([hashA, hashB, hashC]);
 
-    expect(requestJson).toHaveBeenNthCalledWith(
+    expect(requestBinaryResponse).toHaveBeenNthCalledWith(
       1,
       "/api/v1/blobs/get",
       expect.objectContaining({
         body: { hashes: [hashA, hashB, hashC] }
       })
     );
-    expect(requestJson).toHaveBeenNthCalledWith(
+    expect(requestBinaryResponse).toHaveBeenNthCalledWith(
       2,
       "/api/v1/blobs/get",
       expect.objectContaining({
