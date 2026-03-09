@@ -3,6 +3,24 @@ import type { BootstrapPolicy } from "../settings";
 
 type ModalMode = "join" | "create" | "delete";
 
+const MODAL_TEXT_KEYS: Record<ModalMode, { title: string; desc: string; confirm: string }> = {
+  create: {
+    title: "vault_modal.title_create",
+    desc: "vault_modal.desc_create",
+    confirm: "vault_modal.confirm_create"
+  },
+  join: {
+    title: "vault_modal.title_join",
+    desc: "vault_modal.desc_join",
+    confirm: "vault_modal.confirm_join"
+  },
+  delete: {
+    title: "vault_modal.title_delete",
+    desc: "vault_modal.desc_delete",
+    confirm: "vault_modal.confirm_delete"
+  }
+};
+
 export interface VaultModalResult {
   vaultName: string;
   passphrase: string;
@@ -40,19 +58,9 @@ export class VaultConnectModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    const titleKey = this.mode === "create"
-      ? "vault_modal.title_create"
-      : this.mode === "delete"
-        ? "vault_modal.title_delete"
-        : "vault_modal.title_join";
-    contentEl.createEl("h3", { text: this.t(titleKey, { vault: this.vaultName }) });
-
-    const descKey = this.mode === "create"
-      ? "vault_modal.desc_create"
-      : this.mode === "delete"
-        ? "vault_modal.desc_delete"
-        : "vault_modal.desc_join";
-    contentEl.createEl("p", { text: this.t(descKey), cls: "setting-item-description" });
+    const textKeys = MODAL_TEXT_KEYS[this.mode];
+    contentEl.createEl("h3", { text: this.t(textKeys.title, { vault: this.vaultName }) });
+    contentEl.createEl("p", { text: this.t(textKeys.desc), cls: "setting-item-description" });
 
     let firstInput: HTMLInputElement | null = null;
 
@@ -122,12 +130,7 @@ export class VaultConnectModal extends Modal {
         });
       });
 
-    const confirmKey = this.mode === "create"
-      ? "vault_modal.confirm_create"
-      : this.mode === "delete"
-        ? "vault_modal.confirm_delete"
-        : "vault_modal.confirm_join";
-    const confirmText = this.t(confirmKey);
+    const confirmText = this.t(textKeys.confirm);
 
     new Setting(contentEl)
       .addButton((button) =>
