@@ -1,6 +1,6 @@
-import { createError, defineEventHandler, getRouterParam, readRawBody } from "h3";
+import { createError, defineEventHandler, getRouterParam } from "h3";
 import { requireDevice } from "#app/utils/auth";
-import { putBlob, sha256 } from "#app/utils/cas";
+import { putBlobFromStream } from "#app/utils/cas";
 
 export default defineEventHandler(async (event) => {
   await requireDevice(event);
@@ -9,16 +9,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Invalid hash" });
   }
 
-  const raw = (await readRawBody(event, false)) as Buffer | null;
-  if (!raw || !raw.length) {
-    throw createError({ statusCode: 400, statusMessage: "Missing binary payload" });
+  try {
+    const result = await putBlobFromStream(hash, event.node.req);
+    return { ok: true, hash, size: result.size };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/Missing binary payload|Hash mismatch:/i.test(message)) {
+      throw createError({ statusCode: 400, statusMessage: message });
+    }
+    throw error;
   }
-
-  const actual = sha256(raw);
-  if (actual !== hash) {
-    throw createError({ statusCode: 400, statusMessage: `Hash mismatch: expected ${hash}, got ${actual}` });
-  }
-
-  await putBlob(hash, raw);
-  return { ok: true, hash, size: raw.length };
 });

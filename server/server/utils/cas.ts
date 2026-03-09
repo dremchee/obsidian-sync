@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { pipeline } from "node:stream/promises";
+import type { Readable } from "node:stream";
 import { resolveDataPaths } from "#app/utils/paths";
 
 export function sha256(input: Buffer) {
@@ -43,6 +45,53 @@ export async function statBlob(hash: string) {
 
 export function streamBlob(hash: string) {
   return createReadStream(blobPath(hash));
+}
+
+export async function putBlobFromStream(hash: string, input: Readable) {
+  const { base } = resolveDataPaths();
+  const targetPath = blobPath(hash);
+  const tmpDir = path.join(base, "tmp", "uploads");
+  const tmpPath = path.join(tmpDir, `${hash}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`);
+  const digest = createHash("sha256");
+  let size = 0;
+
+  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+
+  try {
+    await pipeline(
+      input,
+      async function* (source) {
+        for await (const chunk of source) {
+          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          digest.update(bytes);
+          size += bytes.length;
+          yield bytes;
+        }
+      },
+      createWriteStream(tmpPath)
+    );
+
+    if (!size) {
+      throw new Error("Missing binary payload");
+    }
+
+    const actual = digest.digest("hex");
+    if (actual !== hash) {
+      throw new Error(`Hash mismatch: expected ${hash}, got ${actual}`);
+    }
+
+    if (await hasBlob(hash)) {
+      await fs.rm(tmpPath, { force: true });
+      return { path: targetPath, size };
+    }
+
+    await fs.rename(tmpPath, targetPath);
+    return { path: targetPath, size };
+  } catch (error) {
+    await fs.rm(tmpPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 export async function listAllBlobs() {
