@@ -5,6 +5,7 @@ import { SyncWebSocketClient, type WsConnectionState } from "./src/sync/ws-clien
 import type { StartupSyncMode, SyncSettings } from "./src/settings";
 import { SyncSettingsTab } from "./src/ui/sync-settings-tab";
 import { StatusBarController } from "./src/ui/status-controller";
+import type { SyncStatusSnapshot } from "./src/ui/types";
 import { createTranslator } from "./src/i18n";
 
 const DEFAULT_SETTINGS: SyncSettings = {
@@ -29,10 +30,13 @@ const DEFAULT_SETTINGS: SyncSettings = {
   debugPerfLogs: false
 };
 
+const MAX_RECENT_ACTIVITY = 8;
+
 export default class CustomSyncPlugin extends Plugin {
   settings: SyncSettings = DEFAULT_SETTINGS;
   engine: SyncEngine | null = null;
   syncTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  scheduledSyncAt: number | null = null;
   syncInProgress = false;
   pendingSync = false;
   lastSyncAt = 0;
@@ -49,6 +53,7 @@ export default class CustomSyncPlugin extends Plugin {
   startupWarmupCyclesLeft = 0;
   persistTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   registerInProgress = false;
+  recentActivity: SyncStatusSnapshot["recentActivity"] = [];
   private readonly translator = createTranslator();
 
   t = (key: string, params?: Record<string, string | number>) => this.translator(key, params);
@@ -113,6 +118,7 @@ export default class CustomSyncPlugin extends Plugin {
       globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
+    this.scheduledSyncAt = null;
     if (this.persistTimer) {
       globalThis.clearTimeout(this.persistTimer);
       this.persistTimer = null;
@@ -135,10 +141,12 @@ export default class CustomSyncPlugin extends Plugin {
           globalThis.clearTimeout(this.syncTimer);
           this.syncTimer = null;
         }
+        this.scheduledSyncAt = null;
         void this.syncNow(false, true);
       },
       onStateChange: (state) => {
         this.wsConnectionState = state;
+        this.recordActivity("websocket", this.describeWebSocketState(state));
         this.updateStatusBar();
       },
       debugLog: this.settings.debugPerfLogs
@@ -199,6 +207,7 @@ export default class CustomSyncPlugin extends Plugin {
       globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
+    this.scheduledSyncAt = null;
     const canSync = Boolean(this.settings.apiKey || (this.settings.authToken && this.settings.vaultName));
     if (canSync) {
       this.pendingSync = true;
@@ -367,8 +376,10 @@ export default class CustomSyncPlugin extends Plugin {
     if (this.settings.startupMode === "immediate") {
       this.syncTimer = globalThis.setTimeout(() => {
         this.syncTimer = null;
+        this.scheduledSyncAt = null;
         void this.syncNow(false, false);
       }, 0);
+      this.scheduledSyncAt = Date.now();
       return;
     }
 
@@ -377,12 +388,14 @@ export default class CustomSyncPlugin extends Plugin {
     const delayMs = baseDelayMs + jitterMs;
     this.syncTimer = globalThis.setTimeout(() => {
       this.syncTimer = null;
+      this.scheduledSyncAt = null;
       if (this.startupSmoothActive) {
         this.runSyncWhenIdle();
         return;
       }
       void this.syncNow(false, false);
     }, delayMs);
+    this.scheduledSyncAt = Date.now() + delayMs;
   }
 
   private runSyncWhenIdle() {
@@ -412,12 +425,14 @@ export default class CustomSyncPlugin extends Plugin {
 
     this.syncTimer = globalThis.setTimeout(() => {
       this.syncTimer = null;
+      this.scheduledSyncAt = null;
       if (this.startupSmoothActive) {
         this.runSyncWhenIdle();
         return;
       }
       void this.syncNow();
     }, delay);
+    this.scheduledSyncAt = Date.now() + delay;
     this.updateStatusBar();
   }
 
@@ -459,6 +474,7 @@ export default class CustomSyncPlugin extends Plugin {
 
     this.syncInProgress = true;
     this.pendingSync = false;
+    this.recordActivity("sync", this.t("settings.sync_status.activity.sync_started"));
     this.updateStatusBar();
 
     try {
@@ -469,6 +485,7 @@ export default class CustomSyncPlugin extends Plugin {
       this.revokedNoticeShown = false;
       this.isDeviceRevoked = false;
       this.lastSyncError = null;
+      this.recordActivity("sync", this.t("settings.sync_status.activity.sync_completed"));
       this.refreshSettingsUi();
       this.updateStatusBar();
       if (showNotice) new Notice(this.t("notices.sync_complete"));
@@ -478,6 +495,7 @@ export default class CustomSyncPlugin extends Plugin {
         this.lastSyncError = "device revoked";
         this.serverConnectionState = "error";
         this.serverConnectionMessage = this.t("status.sync_revoked");
+        this.recordActivity("error", this.t("settings.sync_status.activity.device_revoked"));
         this.refreshSettingsUi();
         this.updateStatusBar();
         if (!this.revokedNoticeShown) {
@@ -489,6 +507,7 @@ export default class CustomSyncPlugin extends Plugin {
         this.lastSyncError = detail;
         this.serverConnectionState = "error";
         this.serverConnectionMessage = detail;
+        this.recordActivity("error", detail);
         this.updateStatusBar();
         this.refreshSettingsUi();
         new Notice(this.t("notices.sync_failed", { detail }));
@@ -496,6 +515,7 @@ export default class CustomSyncPlugin extends Plugin {
         this.lastSyncError = this.toSyncErrorText(err);
         this.serverConnectionState = "error";
         this.serverConnectionMessage = this.lastSyncError;
+        this.recordActivity("error", this.lastSyncError);
         this.updateStatusBar();
         this.refreshSettingsUi();
       }
@@ -551,8 +571,50 @@ export default class CustomSyncPlugin extends Plugin {
     return compact.length > 80 ? `${compact.slice(0, 80)}...` : compact;
   }
 
+  private describeWebSocketState(state: WsConnectionState) {
+    return this.t(`settings.sync_status.websocket_state.${state}`);
+  }
+
+  private recordActivity(kind: "sync" | "error" | "websocket", message: string) {
+    this.recentActivity = [
+      { ts: Date.now(), kind, message },
+      ...this.recentActivity
+    ].slice(0, MAX_RECENT_ACTIVITY);
+  }
+
   private refreshSettingsUi() {
     this.settingTab?.display();
+  }
+
+  getSyncStatusSnapshot(): SyncStatusSnapshot {
+    const pendingOperationCount = this.engine?.getStateSnapshot().pendingOperations?.length || 0;
+    const syncQueued = Boolean(this.pendingSync || this.syncTimer);
+
+    let overallState: SyncStatusSnapshot["overallState"] = "ok";
+    if (!this.settings.syncEnabled) {
+      overallState = "disabled";
+    } else if (this.isDeviceRevoked) {
+      overallState = "revoked";
+    } else if (this.syncInProgress) {
+      overallState = "syncing";
+    } else if (syncQueued || pendingOperationCount > 0) {
+      overallState = "pending";
+    } else if (this.lastSyncError) {
+      overallState = "error";
+    }
+
+    return {
+      overallState,
+      lastSyncAt: this.lastSyncAt,
+      nextSyncAt: this.scheduledSyncAt,
+      pendingOperationCount,
+      syncQueued,
+      wsConnectionState: this.wsConnectionState,
+      lastError: this.lastSyncError,
+      vaultName: this.settings.vaultName || null,
+      deviceId: this.settings.deviceId || null,
+      recentActivity: this.recentActivity
+    };
   }
 
   private updateStatusBar() {
@@ -585,6 +647,7 @@ export default class CustomSyncPlugin extends Plugin {
       globalThis.clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
+    this.scheduledSyncAt = null;
     this.startupSmoothActive = false;
     this.pendingSync = true;
     this.updateStatusBar();
