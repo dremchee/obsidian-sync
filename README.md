@@ -80,7 +80,7 @@ Copy files from `plugin/dist/` into your Obsidian vault plugin folder:
 - `GET /api/v1/file/versions?path=...`
 - `POST /api/v1/file/restore`
 - `POST /api/v1/admin/gc` (`x-admin-token` required)
-- `GET /healthz`
+- `GET /healthz` returns `ok`, `degraded`, or `fail` plus DB/storage/backup summary
 - `GET /metrics`
 
 ## Ops Scripts
