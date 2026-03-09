@@ -18,6 +18,7 @@ export type PullEvent = {
 export type BatchBlobResponse = {
   items: Array<{ hash: string; dataBase64: string }>;
   missing: string[];
+  deferred?: string[];
 };
 
 export type MissingBlobResponse = {

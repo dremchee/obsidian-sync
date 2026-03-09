@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const hashes = Array.isArray(body?.hashes) ? body.hashes : [];
 
   if (!hashes.length) {
-    return { items: [], missing: [] as string[] };
+    return { items: [], missing: [] as string[], deferred: [] as string[] };
   }
 
   if (hashes.length > SERVER_SYNC_LIMITS.blobBatchGetMaxHashes) {
@@ -30,14 +30,21 @@ export default defineEventHandler(async (event) => {
 
   const items: Array<{ hash: string; dataBase64: string }> = [];
   const missing: string[] = [];
+  const deferred: string[] = [];
+  let totalBytes = 0;
   for (const hash of normalized) {
     if (!(await hasBlob(hash))) {
       missing.push(hash);
       continue;
     }
     const payload = await readBlob(hash);
+    if (items.length && totalBytes + payload.length > SERVER_SYNC_LIMITS.blobBatchGetMaxBytes) {
+      deferred.push(hash);
+      continue;
+    }
+    totalBytes += payload.length;
     items.push({ hash, dataBase64: payload.toString("base64") });
   }
 
-  return { items, missing };
+  return { items, missing, deferred };
 });

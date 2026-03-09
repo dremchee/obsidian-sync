@@ -5,6 +5,7 @@ export const SERVER_SYNC_LIMITS = {
   syncPushMaxRequests: 120,
   syncPushWindowMs: 60 * 1000,
   blobBatchGetMaxHashes: 100,
+  blobBatchGetMaxBytes: 2 * 1024 * 1024,
   blobBatchMissingMaxHashes: 1000,
   syncPullDefaultLimit: 200,
   syncPullMaxLimit: 1000

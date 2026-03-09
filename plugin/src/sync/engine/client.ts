@@ -138,15 +138,15 @@ export class EngineClient {
 
   async downloadBlobsBatched(hashes: string[]): Promise<Map<string, Uint8Array>> {
     const out = new Map<string, Uint8Array>();
-    const uniq = Array.from(new Set(hashes));
-    if (!uniq.length) return out;
+    const pending = Array.from(new Set(hashes));
+    if (!pending.length) return out;
 
     const batchSize = Math.max(
       1,
       Math.min(SYNC_LIMITS.maxBlobBatchSize, this.settings.blobBatchSize || SYNC_LIMITS.defaultBlobBatchSize)
     );
-    for (let i = 0; i < uniq.length; i += batchSize) {
-      const chunk = uniq.slice(i, i + batchSize);
+    while (pending.length) {
+      const chunk = pending.splice(0, batchSize);
       const res = await this.requestJson<BatchBlobResponse>("/api/v1/blobs/get", {
         method: "POST",
         headers: this.authHeaders(),
@@ -156,6 +156,9 @@ export class EngineClient {
         const bytes = this.fromB64(item.dataBase64);
         await this.verifyBlobHash(item.hash, bytes);
         out.set(item.hash, bytes);
+      }
+      if (Array.isArray(res.deferred) && res.deferred.length) {
+        pending.unshift(...res.deferred);
       }
     }
 
