@@ -22,13 +22,22 @@ describe("metrics rendering", () => {
       syncEvents: 7,
       syncConflicts: 8,
       blobCount: 9,
-      processUptimeSeconds: 10
+      blobUploadBytesTotal: 10,
+      blobDownloadBytesTotal: 11,
+      blobBatchRequestsTotal: 12,
+      blobBatchItemsTotal: 13,
+      blobBatchDeferredTotal: 14,
+      blobBatchMissingTotal: 15,
+      processUptimeSeconds: 16
     });
 
     expect(output).toContain("obsidian_sync_vaults_total 1");
     expect(output).toContain("obsidian_sync_devices_active 2");
     expect(output).toContain("obsidian_sync_files_live 4");
     expect(output).toContain("obsidian_sync_conflicts_total 8");
-    expect(output).toContain("obsidian_sync_process_uptime_seconds 10");
+    expect(output).toContain("obsidian_sync_blob_upload_bytes_total 10");
+    expect(output).toContain("obsidian_sync_blob_download_bytes_total 11");
+    expect(output).toContain("obsidian_sync_blob_batch_requests_total 12");
+    expect(output).toContain("obsidian_sync_process_uptime_seconds 16");
   });
 });

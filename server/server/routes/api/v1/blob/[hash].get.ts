@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, getRouterParam, sendStream, setHeader } from "h3";
 import { requireDevice } from "#app/utils/auth";
 import { hasBlob, statBlob, streamBlob } from "#app/utils/cas";
+import { recordBlobDownloadBytes } from "#app/utils/metrics";
 
 export default defineEventHandler(async (event) => {
   await requireDevice(event);
@@ -14,6 +15,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const info = await statBlob(hash);
+  recordBlobDownloadBytes(info.size);
   setHeader(event, "content-type", "application/octet-stream");
   setHeader(event, "content-length", info.size);
   return sendStream(event, streamBlob(hash));

@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, getRouterParam } from "h3";
 import { requireDevice } from "#app/utils/auth";
 import { putBlobFromStream } from "#app/utils/cas";
+import { recordBlobUploadBytes } from "#app/utils/metrics";
 
 export default defineEventHandler(async (event) => {
   await requireDevice(event);
@@ -11,6 +12,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const result = await putBlobFromStream(hash, event.node.req);
+    recordBlobUploadBytes(result.size);
     return { ok: true, hash, size: result.size };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
