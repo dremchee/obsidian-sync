@@ -589,6 +589,7 @@ export default class CustomSyncPlugin extends Plugin {
   getSyncStatusSnapshot(): SyncStatusSnapshot {
     const pendingOperationCount = this.engine?.getStateSnapshot().pendingOperations?.length || 0;
     const syncQueued = Boolean(this.pendingSync || this.syncTimer);
+    const runtime = this.engine?.getRuntimeStatusSnapshot();
 
     let overallState: SyncStatusSnapshot["overallState"] = "ok";
     if (!this.settings.syncEnabled) {
@@ -605,6 +606,7 @@ export default class CustomSyncPlugin extends Plugin {
 
     return {
       overallState,
+      currentPhase: runtime?.currentRunPhase || "idle",
       lastSyncAt: this.lastSyncAt,
       nextSyncAt: this.scheduledSyncAt,
       pendingOperationCount,
@@ -613,6 +615,13 @@ export default class CustomSyncPlugin extends Plugin {
       lastError: this.lastSyncError,
       vaultName: this.settings.vaultName || null,
       deviceId: this.settings.deviceId || null,
+      lastPullEvents: runtime?.lastPullEvents || 0,
+      lastPullApplied: runtime?.lastPullApplied || 0,
+      lastPushOperations: runtime?.lastPushOperations || 0,
+      lastBlobBatchHashes: runtime?.lastBlobBatchHashes || 0,
+      lastBlobBatchItems: runtime?.lastBlobBatchItems || 0,
+      lastBlobBatchDeferred: runtime?.lastBlobBatchDeferred || 0,
+      lastBlobBatchBytes: runtime?.lastBlobBatchBytes || 0,
       recentActivity: this.recentActivity
     };
   }

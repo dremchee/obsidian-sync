@@ -32,6 +32,7 @@ export function renderSyncStatusSection(
 
   const rows = [
     t("settings.sync_status.current_state"),
+    t("settings.sync_status.current_phase"),
     t("settings.sync_status.last_sync"),
     t("settings.sync_status.next_sync"),
     t("settings.sync_status.pending_ops"),
@@ -39,7 +40,11 @@ export function renderSyncStatusSection(
     t("settings.sync_status.websocket"),
     t("settings.sync_status.vault"),
     t("settings.sync_status.device_id"),
-    t("settings.sync_status.last_error")
+    t("settings.sync_status.last_error"),
+    t("settings.sync_status.last_pull_events"),
+    t("settings.sync_status.last_pull_applied"),
+    t("settings.sync_status.last_push_ops"),
+    t("settings.sync_status.last_blob_batch")
   ].map((label) => createKeyValueRow(panel, label).valueEl);
 
   const activityWrap = panel.createDiv();
@@ -60,14 +65,21 @@ export function renderSyncStatusSection(
   const render = () => {
     const snapshot = plugin.getSyncStatusSnapshot();
     rows[0].setText(t(`settings.sync_status.state.${snapshot.overallState}`));
-    rows[1].setText(formatStatusTimestamp(snapshot.lastSyncAt, t));
-    rows[2].setText(snapshot.nextSyncAt ? formatStatusTimestamp(snapshot.nextSyncAt, t) : t("settings.sync_status.none"));
-    rows[3].setText(String(snapshot.pendingOperationCount));
-    rows[4].setText(snapshot.syncQueued ? t("settings.sync_status.yes") : t("settings.sync_status.no"));
-    rows[5].setText(t(`settings.sync_status.websocket_state.${snapshot.wsConnectionState}`));
-    rows[6].setText(snapshot.vaultName || t("settings.sync_status.none"));
-    rows[7].setText(snapshot.deviceId || t("settings.sync_status.none"));
-    rows[8].setText(snapshot.lastError || t("settings.sync_status.none"));
+    rows[1].setText(t(`settings.sync_status.phase.${snapshot.currentPhase}`));
+    rows[2].setText(formatStatusTimestamp(snapshot.lastSyncAt, t));
+    rows[3].setText(snapshot.nextSyncAt ? formatStatusTimestamp(snapshot.nextSyncAt, t) : t("settings.sync_status.none"));
+    rows[4].setText(String(snapshot.pendingOperationCount));
+    rows[5].setText(snapshot.syncQueued ? t("settings.sync_status.yes") : t("settings.sync_status.no"));
+    rows[6].setText(t(`settings.sync_status.websocket_state.${snapshot.wsConnectionState}`));
+    rows[7].setText(snapshot.vaultName || t("settings.sync_status.none"));
+    rows[8].setText(snapshot.deviceId || t("settings.sync_status.none"));
+    rows[9].setText(snapshot.lastError || t("settings.sync_status.none"));
+    rows[10].setText(String(snapshot.lastPullEvents));
+    rows[11].setText(String(snapshot.lastPullApplied));
+    rows[12].setText(String(snapshot.lastPushOperations));
+    rows[13].setText(
+      `${snapshot.lastBlobBatchHashes}/${snapshot.lastBlobBatchItems}/${snapshot.lastBlobBatchDeferred} • ${formatBytes(snapshot.lastBlobBatchBytes)}`
+    );
     syncNowButton.disabled = snapshot.overallState === "syncing";
 
     activityList.empty();
@@ -101,4 +113,11 @@ export function renderSyncStatusSection(
 
   render();
   return globalThis.setInterval(render, 1000);
+}
+
+function formatBytes(bytes: number) {
+  if (!bytes) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

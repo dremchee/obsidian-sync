@@ -33,6 +33,12 @@ export class SyncEngine {
   private readonly state = new SyncState();
   private readonly runner: SyncRunner;
   private readonly defaultRunProfile: Required<RunProfile> = SYNC_DEFAULT_RUN_PROFILE;
+  private currentRunPhase: "idle" | "pull" | "push" = "idle";
+  private lastRunMetrics = {
+    lastPullEvents: 0,
+    lastPullApplied: 0,
+    lastPushOperations: 0
+  };
 
   constructor(app: App, settings: SyncSettings) {
     this.app = app;
@@ -51,7 +57,9 @@ export class SyncEngine {
       isRecoverablePayloadError: (err) => this.isRecoverablePayloadError(err),
       readAndEncryptFile: (file) => this.readAndEncryptFile(file),
       runWithConcurrency,
-      yieldToUi
+      yieldToUi,
+      setRunPhase: (phase) => { this.currentRunPhase = phase; },
+      setLastRunMetrics: (metrics) => { this.lastRunMetrics = metrics; }
     });
   }
 
@@ -125,6 +133,14 @@ export class SyncEngine {
 
   getStateSnapshot(): EngineStateSnapshot {
     return this.state.snapshot();
+  }
+
+  getRuntimeStatusSnapshot() {
+    return {
+      currentRunPhase: this.currentRunPhase,
+      ...this.lastRunMetrics,
+      ...this.client.getTelemetrySnapshot()
+    };
   }
 
   private async saveConflictCopy(file: TFile, conflictPath: string) {

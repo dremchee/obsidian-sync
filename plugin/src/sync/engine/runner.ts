@@ -32,6 +32,8 @@ export type RunnerDeps = {
   readAndEncryptFile: (file: TFile) => Promise<{ hash: string; bytes: Uint8Array }>;
   runWithConcurrency: <T>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<void>) => Promise<void>;
   yieldToUi: () => Promise<void>;
+  setRunPhase?: (phase: "idle" | "pull" | "push") => void;
+  setLastRunMetrics?: (metrics: { lastPullEvents: number; lastPullApplied: number; lastPushOperations: number }) => void;
 };
 
 export class SyncRunner {
@@ -53,7 +55,13 @@ export class SyncRunner {
     };
     try {
       const startedAt = performance.now();
+      this.deps.setRunPhase?.("pull");
       const pull = await this.pullRemoteChanges(Boolean(options?.forcePull));
+      this.deps.setLastRunMetrics?.({
+        lastPullEvents: pull.events,
+        lastPullApplied: pull.applied,
+        lastPushOperations: 0
+      });
 
       if (!this.deps.state.initialSyncDone) {
         if (!this.deps.state.isNewVault) {
@@ -78,7 +86,13 @@ export class SyncRunner {
             this.deps.debugPerf(`initial sync: merge pull-first, pushing local-only files`);
           }
 
+          this.deps.setRunPhase?.("push");
           const push = await this.pushLocalChanges();
+          this.deps.setLastRunMetrics?.({
+            lastPullEvents: pull.events,
+            lastPullApplied: pull.applied,
+            lastPushOperations: push.operations
+          });
           this.deps.state.completeBootstrap();
           const totalMs = Math.round(performance.now() - startedAt);
           this.deps.debugPerf(
@@ -92,7 +106,13 @@ export class SyncRunner {
         this.deps.debugPerf(`initial sync: new vault, proceeding with push`);
       }
 
+      this.deps.setRunPhase?.("push");
       const push = await this.pushLocalChanges();
+      this.deps.setLastRunMetrics?.({
+        lastPullEvents: pull.events,
+        lastPullApplied: pull.applied,
+        lastPushOperations: push.operations
+      });
       if (!this.deps.state.initialSyncDone) {
         this.deps.state.completeBootstrap();
       }
@@ -105,6 +125,7 @@ export class SyncRunner {
         `ops=${push.operations} uploads=${push.uploads} batches=${push.batches} pushConflicts=${push.conflicts}`
       );
     } finally {
+      this.deps.setRunPhase?.("idle");
       this.activeRunProfile = prevProfile;
     }
   }

@@ -7,6 +7,7 @@ export type ServerConnectionState = "unknown" | "ok" | "error";
 
 export type SyncStatusSnapshot = {
   overallState: "disabled" | "revoked" | "syncing" | "pending" | "error" | "ok";
+  currentPhase: "idle" | "pull" | "push";
   lastSyncAt: number;
   nextSyncAt: number | null;
   pendingOperationCount: number;
@@ -15,6 +16,13 @@ export type SyncStatusSnapshot = {
   lastError: string | null;
   vaultName: string | null;
   deviceId: string | null;
+  lastPullEvents: number;
+  lastPullApplied: number;
+  lastPushOperations: number;
+  lastBlobBatchHashes: number;
+  lastBlobBatchItems: number;
+  lastBlobBatchDeferred: number;
+  lastBlobBatchBytes: number;
   recentActivity: Array<{
     ts: number;
     kind: "sync" | "error" | "websocket";

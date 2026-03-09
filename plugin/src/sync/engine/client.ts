@@ -10,6 +10,15 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 export class EngineClient {
+  private telemetry = {
+    lastBlobBatchHashes: 0,
+    lastBlobBatchItems: 0,
+    lastBlobBatchDeferred: 0,
+    lastBlobBatchBytes: 0,
+    lastBlobDownloadBytes: 0,
+    lastBlobUploadBytes: 0
+  };
+
   constructor(
     private readonly settings: SyncSettings,
     private readonly debugPerf: (message: string) => void
@@ -129,11 +138,13 @@ export class EngineClient {
 
   async uploadBlob(hash: string, bytes: Uint8Array) {
     await this.uploadBinary(`/api/v1/blob/${hash}`, bytes);
+    this.telemetry.lastBlobUploadBytes = bytes.byteLength;
   }
 
   async downloadBlob(hash: string) {
     const bytes = await this.requestBinary(`/api/v1/blob/${hash}`);
     await this.verifyBlobHash(hash, bytes);
+    this.telemetry.lastBlobDownloadBytes = bytes.byteLength;
     return bytes;
   }
 
@@ -154,10 +165,16 @@ export class EngineClient {
         headers: this.authHeaders(),
         body: { hashes: chunk }
       }));
+      let batchBytes = 0;
       for (const item of res.items) {
         await this.verifyBlobHash(item.hash, item.bytes);
         out.set(item.hash, item.bytes);
+        batchBytes += item.bytes.byteLength;
       }
+      this.telemetry.lastBlobBatchHashes = chunk.length;
+      this.telemetry.lastBlobBatchItems = res.items.length;
+      this.telemetry.lastBlobBatchDeferred = res.deferred.length;
+      this.telemetry.lastBlobBatchBytes = batchBytes;
       if (res.deferred.length) {
         batchSize = Math.max(1, Math.min(batchSize - 1, Math.ceil(chunk.length / 2)));
         pending.unshift(...res.deferred);
@@ -290,6 +307,10 @@ export class EngineClient {
 
   private parseBlobBatchResponse(payload: Uint8Array): BatchBlobResponse {
     return parseBlobBatchPayload(payload);
+  }
+
+  getTelemetrySnapshot() {
+    return { ...this.telemetry };
   }
 
   private async verifyBlobHash(expectedHash: string, bytes: Uint8Array) {
