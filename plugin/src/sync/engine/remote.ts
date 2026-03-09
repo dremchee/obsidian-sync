@@ -118,6 +118,7 @@ async function applyRemoteDelete(ctx: RemoteContext, evt: PullEvent) {
     await ctx.app.vault.delete(existing);
     ctx.markRemoteSuppressedPath(evt.path);
   }
+  ctx.state.untrackFilePath(evt.path);
   if (evt.revisionId) {
     ctx.state.headRevisionByPath.set(evt.path, evt.revisionId);
   }
@@ -190,6 +191,7 @@ async function applyRemoteRename(ctx: RemoteContext, evt: PullEvent) {
       ctx.state.pushedMtime.set(evt.path, stat.mtime);
     }
   }
+  ctx.state.renameTrackedFilePath(prevPath, evt.path);
 
   ctx.state.headRevisionByPath.delete(prevPath);
   if (evt.revisionId) {
@@ -274,6 +276,7 @@ async function applyRemoteUpsert(
   await ctx.app.vault.adapter.writeBinary(evt.path, toArrayBuffer(plainBytes));
 
   const stat = await ctx.app.vault.adapter.stat(evt.path);
+  ctx.state.trackFilePath(evt.path);
   if (stat) {
     ctx.state.pushedMtime.set(evt.path, stat.mtime);
     ctx.markRemoteSuppressedPath(evt.path, { expectedMtime: stat.mtime });

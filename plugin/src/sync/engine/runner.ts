@@ -109,15 +109,18 @@ export class SyncRunner {
     }
   }
 
-  private takePendingOperations() {
-    const { nextScanCursor } = collectFallbackOperations({
+  private async takePendingOperations() {
+    const { nextDirectoryScanCursor } = await collectFallbackOperations({
       pendingOperations: this.deps.state.pendingOperations,
       files: this.deps.app.vault.getFiles(),
       pushedMtime: this.deps.state.pushedMtime,
-      scanCursor: this.deps.state.scanCursor,
-      fallbackScanChunkSize: this.activeRunProfile.fallbackScanChunkSize
+      trackedFilesByDirectory: this.deps.state.trackedFilesByDirectory,
+      knownDirectoryMtime: this.deps.state.knownDirectoryMtime,
+      directoryScanCursor: this.deps.state.directoryScanCursor,
+      fallbackScanChunkSize: this.activeRunProfile.fallbackScanChunkSize,
+      statDirectory: async (path) => this.deps.app.vault.adapter?.stat ? this.deps.app.vault.adapter.stat(path) : null
     });
-    this.deps.state.scanCursor = nextScanCursor;
+    this.deps.state.directoryScanCursor = nextDirectoryScanCursor;
     return this.deps.state.pendingOperations.slice(0, this.activeRunProfile.maxFilesPerCycle);
   }
 
@@ -129,7 +132,7 @@ export class SyncRunner {
     let batches = 0;
     let conflictCount = 0;
 
-    const candidates = this.takePendingOperations();
+    const candidates = await this.takePendingOperations();
     if (!candidates.length) {
       return {
         candidates: 0,

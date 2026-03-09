@@ -68,7 +68,7 @@ describe("queue operations", () => {
     ]);
   });
 
-  it("collects fallback scan operations incrementally", () => {
+  it("collects fallback scan operations incrementally by directory", async () => {
     const pending: PendingLocalOperation[] = [];
     const files = [
       makeFile("Notes/A.md", 10),
@@ -76,17 +76,24 @@ describe("queue operations", () => {
       makeFile("Notes/C.md", 30)
     ];
     const pushedMtime = new Map<string, number>([["Notes/A.md", 10]]);
+    const trackedFilesByDirectory = new Map<string, Set<string>>([
+      ["Notes", new Set(["Notes/A.md", "Notes/B.md", "Notes/C.md"])]
+    ]);
+    const knownDirectoryMtime = new Map<string, number>();
 
-    const first = collectFallbackOperations({
+    const first = await collectFallbackOperations({
       pendingOperations: pending,
       files,
       pushedMtime,
-      scanCursor: 0,
-      fallbackScanChunkSize: 2
+      trackedFilesByDirectory,
+      knownDirectoryMtime,
+      directoryScanCursor: 0,
+      fallbackScanChunkSize: 1,
+      statDirectory: async () => ({ mtime: 42 })
     });
 
-    expect(first).toEqual({ enqueued: 1, nextScanCursor: 2 });
-    expect(pending.map((op) => op.path)).toEqual(["Notes/B.md"]);
+    expect(first).toEqual({ enqueued: 2, nextDirectoryScanCursor: 0 });
+    expect(pending.map((op) => op.path)).toEqual(["Notes/B.md", "Notes/C.md"]);
     expect(hasPendingOperationForPath(pending, "Notes/B.md")).toBe(true);
   });
 });

@@ -2,6 +2,13 @@ import type { TFile } from "obsidian";
 import type { PendingLocalOperation } from "./types";
 import { newOperationId, normalizePath } from "./utils";
 
+function directoryPathFor(path: string) {
+  const normalizedPath = normalizePath(path);
+  if (!normalizedPath) return "";
+  const lastSlashIdx = normalizedPath.lastIndexOf("/");
+  return lastSlashIdx >= 0 ? normalizedPath.slice(0, lastSlashIdx) : "";
+}
+
 export function normalizePendingOperation(
   op: Partial<PendingLocalOperation> | null | undefined
 ): PendingLocalOperation | null {
@@ -140,33 +147,68 @@ export function hasPendingOperationForPath(
   });
 }
 
-export function collectFallbackOperations(args: {
+export async function collectFallbackOperations(args: {
   pendingOperations: PendingLocalOperation[];
   files: TFile[];
   pushedMtime: Map<string, number>;
-  scanCursor: number;
+  trackedFilesByDirectory: Map<string, Set<string>>;
+  knownDirectoryMtime: Map<string, number>;
+  directoryScanCursor: number;
   fallbackScanChunkSize: number;
+  statDirectory: (path: string) => Promise<{ mtime: number } | null>;
 }) {
-  const { pendingOperations, files, pushedMtime, scanCursor, fallbackScanChunkSize } = args;
-  if (!files.length) {
-    return { enqueued: 0, nextScanCursor: scanCursor };
+  const {
+    pendingOperations,
+    files,
+    pushedMtime,
+    trackedFilesByDirectory,
+    knownDirectoryMtime,
+    directoryScanCursor,
+    fallbackScanChunkSize,
+    statDirectory
+  } = args;
+
+  if (!trackedFilesByDirectory.size) {
+    for (const file of files) {
+      const directoryPath = directoryPathFor(file.path);
+      const trackedFiles = trackedFilesByDirectory.get(directoryPath) || new Set<string>();
+      trackedFiles.add(file.path);
+      trackedFilesByDirectory.set(directoryPath, trackedFiles);
+    }
   }
 
-  const remaining = Math.min(fallbackScanChunkSize, files.length);
+  const directories = Array.from(trackedFilesByDirectory.keys());
+  if (!directories.length) {
+    return { enqueued: 0, nextDirectoryScanCursor: directoryScanCursor };
+  }
+
+  const remaining = Math.min(fallbackScanChunkSize, directories.length);
   let enqueued = 0;
   for (let i = 0; i < remaining; i += 1) {
-    const idx = (scanCursor + i) % files.length;
-    const file = files[idx];
-    if (hasPendingOperationForPath(pendingOperations, file.path)) continue;
-    const knownMtime = pushedMtime.get(file.path);
-    if (knownMtime === file.stat.mtime) continue;
-    enqueueUpsert(pendingOperations, file.path, file.stat.mtime, "scan");
-    enqueued += 1;
+    const idx = (directoryScanCursor + i) % directories.length;
+    const directoryPath = directories[idx];
+    const currentDirectoryMtime = directoryPath ? (await statDirectory(directoryPath))?.mtime ?? 0 : -1;
+    const knownDirectoryStatMtime = knownDirectoryMtime.get(directoryPath);
+    if (directoryPath && knownDirectoryStatMtime === currentDirectoryMtime) {
+      continue;
+    }
+
+    knownDirectoryMtime.set(directoryPath, currentDirectoryMtime);
+    const currentDirectoryFiles = files.filter((file) => directoryPathFor(file.path) === directoryPath);
+    trackedFilesByDirectory.set(directoryPath, new Set(currentDirectoryFiles.map((file) => file.path)));
+
+    for (const file of currentDirectoryFiles) {
+      if (hasPendingOperationForPath(pendingOperations, file.path)) continue;
+      const knownMtime = pushedMtime.get(file.path);
+      if (knownMtime === file.stat.mtime) continue;
+      enqueueUpsert(pendingOperations, file.path, file.stat.mtime, "scan");
+      enqueued += 1;
+    }
   }
 
   return {
     enqueued,
-    nextScanCursor: (scanCursor + remaining) % files.length
+    nextDirectoryScanCursor: (directoryScanCursor + remaining) % directories.length
   };
 }
 

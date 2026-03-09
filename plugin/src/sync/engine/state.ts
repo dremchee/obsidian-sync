@@ -13,13 +13,15 @@ export class SyncState {
   readonly uploadedBlobHashes = new Set<string>();
   readonly remoteWriteSuppressUntil = new Map<string, RemoteWriteSuppression>();
   readonly bootstrapLocalPaths = new Set<string>();
+  readonly trackedFilesByDirectory = new Map<string, Set<string>>();
+  readonly knownDirectoryMtime = new Map<string, number>();
   pendingOperations: PendingLocalOperation[] = [];
   initialSyncDone = false;
   isNewVault = false;
   bootstrapPending = false;
   bootstrapPolicy: BootstrapPolicy | null = null;
   lastPullAt = 0;
-  scanCursor = 0;
+  directoryScanCursor = 0;
 
   reset() {
     this.lastEventId = 0;
@@ -28,13 +30,15 @@ export class SyncState {
     this.uploadedBlobHashes.clear();
     this.remoteWriteSuppressUntil.clear();
     this.bootstrapLocalPaths.clear();
+    this.trackedFilesByDirectory.clear();
+    this.knownDirectoryMtime.clear();
     this.pendingOperations = [];
     this.initialSyncDone = false;
     this.isNewVault = false;
     this.bootstrapPending = false;
     this.bootstrapPolicy = null;
     this.lastPullAt = 0;
-    this.scanCursor = 0;
+    this.directoryScanCursor = 0;
   }
 
   applySnapshot(snapshot: Partial<EngineStateSnapshot> | null | undefined) {
@@ -132,6 +136,7 @@ export class SyncState {
     this.bootstrapPending = true;
     this.bootstrapPolicy = policy;
     this.bootstrapLocalPaths.clear();
+    this.rebuildTrackedFiles(files);
     for (const file of files) {
       this.bootstrapLocalPaths.add(file.path);
     }
@@ -147,6 +152,41 @@ export class SyncState {
   isBootstrapLocalPath(path: string) {
     const normalizedPath = normalizePath(path);
     return Boolean(normalizedPath && this.bootstrapLocalPaths.has(normalizedPath));
+  }
+
+  rebuildTrackedFiles(files: TFile[]) {
+    this.trackedFilesByDirectory.clear();
+    this.knownDirectoryMtime.clear();
+    for (const file of files) {
+      this.trackFilePath(file.path);
+    }
+  }
+
+  trackFilePath(path: string) {
+    const normalizedPath = normalizePath(path);
+    if (!normalizedPath) return;
+    const directoryPath = parentDirectoryPath(normalizedPath);
+    const trackedFiles = this.trackedFilesByDirectory.get(directoryPath) || new Set<string>();
+    trackedFiles.add(normalizedPath);
+    this.trackedFilesByDirectory.set(directoryPath, trackedFiles);
+  }
+
+  untrackFilePath(path: string) {
+    const normalizedPath = normalizePath(path);
+    if (!normalizedPath) return;
+    const directoryPath = parentDirectoryPath(normalizedPath);
+    const trackedFiles = this.trackedFilesByDirectory.get(directoryPath);
+    if (!trackedFiles) return;
+    trackedFiles.delete(normalizedPath);
+    if (!trackedFiles.size) {
+      this.trackedFilesByDirectory.delete(directoryPath);
+      this.knownDirectoryMtime.delete(directoryPath);
+    }
+  }
+
+  renameTrackedFilePath(prevPath: string, nextPath: string) {
+    this.untrackFilePath(prevPath);
+    this.trackFilePath(nextPath);
   }
 
   adoptRemoteMergeBaseline(files: TFile[]) {
@@ -194,4 +234,9 @@ export class SyncState {
       enqueueUpsert(this.pendingOperations, file.path, file.stat.mtime, "scan");
     }
   }
+}
+
+function parentDirectoryPath(path: string) {
+  const lastSlashIdx = path.lastIndexOf("/");
+  return lastSlashIdx >= 0 ? path.slice(0, lastSlashIdx) : "";
 }

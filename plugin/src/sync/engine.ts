@@ -84,18 +84,22 @@ export class SyncEngine {
   }
 
   markDirty(path: string) {
+    this.state.trackFilePath(path);
     enqueueUpsert(this.state.pendingOperations, path);
   }
 
   markFileDeleted(path: string) {
+    this.state.untrackFilePath(path);
     enqueueDelete(this.state.pendingOperations, path);
   }
 
   markFileRenamed(prevPath: string, nextPath: string) {
+    this.state.renameTrackedFilePath(prevPath, nextPath);
     enqueueRename(this.state.pendingOperations, prevPath, nextPath);
   }
 
   markAllFilesDirty() {
+    this.state.rebuildTrackedFiles(this.app.vault.getFiles());
     for (const file of this.app.vault.getFiles()) {
       enqueueUpsert(this.state.pendingOperations, file.path, file.stat.mtime);
     }
@@ -115,6 +119,7 @@ export class SyncEngine {
 
   applyStateSnapshot(snapshot: Partial<EngineStateSnapshot> | null | undefined) {
     this.state.applySnapshot(snapshot);
+    this.state.rebuildTrackedFiles(this.app.vault.getFiles());
     this.pruneFolderTrackedState();
   }
 
