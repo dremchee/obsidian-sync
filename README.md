@@ -34,6 +34,10 @@ API base URL: `http://127.0.0.1:3243`
 - `LOG_SENSITIVE_MODE` sensitive-field logging mode (`redact` or `drop`)
 - `LOG_RETENTION_DAYS` keep logs for this many days (default `1`)
 - `LOG_RETENTION_CRON` cron for retention task (default `0 3 * * *`, daily at 03:00)
+- `DATA_RETENTION_DAYS` keep sync history for this many days (default `30`)
+- `DATA_RETENTION_CRON` cron for data retention task (default `0 4 * * *`, daily at 04:00)
+- `BACKUP_CRON` cron for automatic DB/blob backups (default `0 2 * * *`, daily at 02:00). Set empty to disable scheduled backups.
+- `BACKUP_RETENTION_DAYS` keep backup snapshots for this many days (default `7`)
 
 Security notes:
 - keep `ADMIN_TOKEN` and `API_KEY_PEPPER` only in `.env`/secret manager and never commit them
@@ -77,6 +81,7 @@ Copy files from `plugin/dist/` into your Obsidian vault plugin folder:
 - `POST /api/v1/file/restore`
 - `POST /api/v1/admin/gc` (`x-admin-token` required)
 - `GET /healthz`
+- `GET /metrics`
 
 ## Ops Scripts
 
