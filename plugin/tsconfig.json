@@ -3,6 +3,10 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["./../shared/*"]
+    },
     "noEmit": true,
     "strict": true,
     "types": ["obsidian"],

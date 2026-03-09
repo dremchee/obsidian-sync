@@ -1,5 +1,5 @@
 import { Notice } from "obsidian";
-import type { BootstrapPolicy } from "../settings";
+import type { BootstrapPolicy } from "@/settings";
 import type { SyncSettingsTabPlugin, UiTranslator } from "./types";
 import type { VaultInfo } from "./vault-section";
 

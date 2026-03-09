@@ -1,4 +1,4 @@
-import type { BootstrapPolicy } from "../../settings";
+import type { BootstrapPolicy } from "@/settings";
 import type { TFile } from "obsidian";
 import type { RemoteWriteSuppression } from "./local-events";
 import { enqueueUpsert, normalizePendingOperation } from "./queue";

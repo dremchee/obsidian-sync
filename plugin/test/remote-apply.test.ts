@@ -1,9 +1,9 @@
 import { TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
-import { encryptBytes, utf8Encode } from "../src/sync/crypto";
-import { applyRemoteEvent } from "../src/sync/engine/remote";
-import { SyncState } from "../src/sync/engine/state";
-import type { PullEvent } from "../src/sync/engine/types";
+import { encryptBytes, utf8Encode } from "@/sync/crypto";
+import { applyRemoteEvent } from "@/sync/engine/remote";
+import { SyncState } from "@/sync/engine/state";
+import type { PullEvent } from "@/sync/engine/types";
 
 type FakeFile = TFile & { stat: { mtime: number }; data?: Uint8Array };
 

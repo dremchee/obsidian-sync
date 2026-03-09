@@ -1,7 +1,7 @@
 import type { Plugin } from "obsidian";
-import type { SyncEngine } from "../sync/engine";
-import type { WsConnectionState } from "../sync/ws-client";
-import type { StartupSyncMode, SyncSettings } from "../settings";
+import type { StartupSyncMode, SyncSettings } from "@/settings";
+import type { SyncEngine } from "@/sync/engine";
+import type { WsConnectionState } from "@/sync/ws-client";
 
 export type ServerConnectionState = "unknown" | "ok" | "error";
 

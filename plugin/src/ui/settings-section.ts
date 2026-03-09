@@ -1,5 +1,5 @@
 import { Setting } from "obsidian";
-import type { BootstrapPolicy, StartupSyncMode } from "../settings";
+import type { BootstrapPolicy, StartupSyncMode } from "@/settings";
 import { appendSection } from "./helpers";
 import type { SyncSettingsTabPlugin, UiTranslator } from "./types";
 

@@ -1,6 +1,6 @@
 import { TFile, type App } from "obsidian";
-import type { SyncSettings } from "../../settings";
-import { SYNC_LIMITS } from "../constants";
+import type { SyncSettings } from "@/settings";
+import { SYNC_LIMITS } from "@/sync/constants";
 import { collectFallbackOperations } from "./queue";
 import { applyRemoteEvent } from "./remote";
 import type { RemoteContext } from "./remote";

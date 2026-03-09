@@ -5,7 +5,7 @@ import {
   shouldQueueLocalUpsert,
   shouldSuppressLocalEvent,
   type RemoteWriteSuppression
-} from "../src/sync/engine/local-events";
+} from "@/sync/engine/local-events";
 
 function makeFile(path: string, mtime: number) {
   return Object.assign(Object.create(TFile.prototype), {

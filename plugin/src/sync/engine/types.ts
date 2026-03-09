@@ -1,5 +1,5 @@
-import type { BootstrapPolicy } from "../../settings";
-import type { BlobBatchItem } from "../../../../shared/blob-batch";
+import type { BootstrapPolicy } from "@/settings";
+import type { BlobBatchItem } from "@shared/blob-batch";
 
 export type SyncOperation = "upsert" | "delete" | "rename";
 

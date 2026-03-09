@@ -4,7 +4,7 @@ import { conflicts, events, fileRevisions, files, syncOperations } from "#app/db
 import { getOrmDb } from "#app/utils/db";
 import { newId } from "#app/utils/auth";
 import { syncEventBus } from "#app/utils/event-bus";
-import { normalizeSyncPath } from "../../../shared/path";
+import { normalizeSyncPath } from "@shared/path";
 
 export type PushOperation = {
   operationId?: string;

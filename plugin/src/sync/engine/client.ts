@@ -1,9 +1,9 @@
 import { requestUrl, type RequestUrlResponse } from "obsidian";
-import type { SyncSettings } from "../../settings";
-import { SYNC_LIMITS } from "../constants";
+import type { SyncSettings } from "@/settings";
+import { SYNC_LIMITS } from "@/sync/constants";
 import type { BatchBlobResponse, MissingBlobResponse } from "./types";
 import { sha256Hex } from "./utils";
-import { parseBlobBatchPayload } from "../../../../shared/blob-batch";
+import { parseBlobBatchPayload } from "@shared/blob-batch";
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;

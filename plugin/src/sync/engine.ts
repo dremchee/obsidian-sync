@@ -1,30 +1,30 @@
 import { App, TAbstractFile, TFile } from "obsidian";
-import type { BootstrapPolicy, SyncSettings } from "../settings";
-import { SYNC_DEFAULT_RUN_PROFILE } from "./constants";
-import { encryptBytes, utf8Encode } from "./crypto";
-import { EngineClient } from "./engine/client";
-import { ensureDirectory, ensureParentDirectory, readFileBytes, writeBinaryFile } from "./engine/file-io";
+import type { BootstrapPolicy, SyncSettings } from "@/settings";
+import { SYNC_DEFAULT_RUN_PROFILE } from "@/sync/constants";
+import { encryptBytes, utf8Encode } from "@/sync/crypto";
+import { EngineClient } from "@/sync/engine/client";
+import { ensureDirectory, ensureParentDirectory, readFileBytes, writeBinaryFile } from "@/sync/engine/file-io";
 import {
   markRemoteSuppressedPath,
   shouldQueueLocalUpsert,
   shouldSuppressLocalEvent
-} from "./engine/local-events";
-import { prunePendingFileOperations, pruneTrackedPaths } from "./engine/prune";
-import { runWithConcurrency, yieldToUi } from "./engine/runtime";
-import { SyncRunner } from "./engine/runner";
-import { SyncState } from "./engine/state";
+} from "@/sync/engine/local-events";
+import { prunePendingFileOperations, pruneTrackedPaths } from "@/sync/engine/prune";
+import { runWithConcurrency, yieldToUi } from "@/sync/engine/runtime";
+import { SyncRunner } from "@/sync/engine/runner";
+import { SyncState } from "@/sync/engine/state";
 import {
   enqueueDelete,
   enqueueRename,
   enqueueUpsert
-} from "./engine/queue";
+} from "@/sync/engine/queue";
 import type {
   EngineStateSnapshot,
   RunProfile
-} from "./engine/types";
-import { sha256Hex } from "./engine/utils";
+} from "@/sync/engine/types";
+import { sha256Hex } from "@/sync/engine/utils";
 
-export type { EngineStateSnapshot } from "./engine/types";
+export type { EngineStateSnapshot } from "@/sync/engine/types";
 
 export class SyncEngine {
   private readonly app: App;

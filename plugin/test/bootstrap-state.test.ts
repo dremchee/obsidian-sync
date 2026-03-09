@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SyncState } from "../src/sync/engine/state";
+import { SyncState } from "@/sync/engine/state";
 
 function makeFile(path: string, mtime: number) {
   return {

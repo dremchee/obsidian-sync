@@ -1,4 +1,8 @@
 import { defineNitroConfig } from "nitropack/config";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
 const scheduledTasks: Record<string, string> = {
   [process.env.LOG_RETENTION_CRON || "0 3 * * *"]: "log-retention",
@@ -12,6 +16,9 @@ if (backupCron) {
 
 export default defineNitroConfig({
   srcDir: "server",
+  alias: {
+    "@shared": resolve(rootDir, "../shared")
+  },
   compatibilityDate: "2026-03-03",
   experimental: {
     tasks: true,

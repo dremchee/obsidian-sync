@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encodeBlobBatchPayload, parseBlobBatchPayload } from "../../shared/blob-batch";
+import { encodeBlobBatchPayload, parseBlobBatchPayload } from "@shared/blob-batch";
 
 describe("blob batch codec", () => {
   it("round-trips binary blob batch payloads", () => {

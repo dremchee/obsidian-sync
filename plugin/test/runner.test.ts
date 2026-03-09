@@ -1,9 +1,9 @@
 import { TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
-import { SYNC_DEFAULT_RUN_PROFILE } from "../src/sync/constants";
-import { SyncRunner } from "../src/sync/engine/runner";
-import { SyncState } from "../src/sync/engine/state";
-import type { PullEvent, PushRequestOperation, PushResult } from "../src/sync/engine/types";
+import { SYNC_DEFAULT_RUN_PROFILE } from "@/sync/constants";
+import { SyncRunner } from "@/sync/engine/runner";
+import { SyncState } from "@/sync/engine/state";
+import type { PullEvent, PushRequestOperation, PushResult } from "@/sync/engine/types";
 
 type FakeFile = TFile & { stat: { mtime: number } };
 

@@ -6,8 +6,8 @@ import {
   enqueueRename,
   enqueueUpsert,
   hasPendingOperationForPath
-} from "../src/sync/engine/queue";
-import type { PendingLocalOperation } from "../src/sync/engine/types";
+} from "@/sync/engine/queue";
+import type { PendingLocalOperation } from "@/sync/engine/types";
 
 function makeFile(path: string, mtime: number) {
   const file = new TFile();

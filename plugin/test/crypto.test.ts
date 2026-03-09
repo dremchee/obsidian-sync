@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decryptBytes, deriveKey, encryptBytes, utf8Decode, utf8Encode } from "../src/sync/crypto";
+import { decryptBytes, deriveKey, encryptBytes, utf8Decode, utf8Encode } from "@/sync/crypto";
 
 describe("sync crypto", () => {
   it("round-trips encrypted payloads", async () => {

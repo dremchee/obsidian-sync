@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { EngineClient } from "../src/sync/engine/client";
-import { sha256Hex } from "../src/sync/engine/utils";
-import { encodeBlobBatchPayload } from "../../shared/blob-batch";
+import { EngineClient } from "@/sync/engine/client";
+import { sha256Hex } from "@/sync/engine/utils";
+import { encodeBlobBatchPayload } from "@shared/blob-batch";
 
 describe("EngineClient blob batching", () => {
   it("retries deferred blob hashes from batch responses", async () => {

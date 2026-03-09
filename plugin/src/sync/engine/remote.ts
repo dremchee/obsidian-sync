@@ -1,7 +1,7 @@
 import { TFile, type App } from "obsidian";
-import type { SyncSettings } from "../../settings";
-import { decryptBytes } from "../crypto";
-import { makeConflictPath } from "../conflicts";
+import type { SyncSettings } from "@/settings";
+import { makeConflictPath } from "@/sync/conflicts";
+import { decryptBytes } from "@/sync/crypto";
 import { dropScanOperationsForPaths, enqueueUpsert, hasPendingOperationForPath } from "./queue";
 import type { SyncState } from "./state";
 import type { PendingLocalOperation, PullEvent } from "./types";

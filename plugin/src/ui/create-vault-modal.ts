@@ -1,5 +1,5 @@
 import { App, Modal, Setting } from "obsidian";
-import type { BootstrapPolicy } from "../settings";
+import type { BootstrapPolicy } from "@/settings";
 
 type ModalMode = "join" | "create" | "delete";
 

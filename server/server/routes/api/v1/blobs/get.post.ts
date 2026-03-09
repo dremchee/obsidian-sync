@@ -13,7 +13,7 @@ import {
   BLOB_BATCH_FRAME_DEFERRED,
   BLOB_BATCH_FRAME_MISSING,
   buildBlobBatchPreamble
-} from "../../../../../../shared/blob-batch";
+} from "@shared/blob-batch";
 
 type Body = { hashes?: string[] };
 

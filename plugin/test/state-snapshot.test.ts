@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CURRENT_ENGINE_STATE_VERSION, migrateEngineStateSnapshot } from "../src/sync/engine/snapshot";
+import { CURRENT_ENGINE_STATE_VERSION, migrateEngineStateSnapshot } from "@/sync/engine/snapshot";
 
 describe("engine state snapshot migration", () => {
   it("migrates legacy snapshots without a version", () => {

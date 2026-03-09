@@ -1,12 +1,12 @@
 import { Notice, Plugin, TAbstractFile, TFile, TFolder, requestUrl } from "obsidian";
-import { SyncEngine, type EngineStateSnapshot } from "./src/sync/engine";
-import { migrateEngineStateSnapshot } from "./src/sync/engine/snapshot";
-import { SyncWebSocketClient, type WsConnectionState } from "./src/sync/ws-client";
-import type { StartupSyncMode, SyncSettings } from "./src/settings";
-import { SyncSettingsTab } from "./src/ui/sync-settings-tab";
-import { StatusBarController } from "./src/ui/status-controller";
-import type { SyncStatusSnapshot } from "./src/ui/types";
-import { createTranslator } from "./src/i18n";
+import { createTranslator } from "@/i18n";
+import type { StartupSyncMode, SyncSettings } from "@/settings";
+import { SyncEngine, type EngineStateSnapshot } from "@/sync/engine";
+import { migrateEngineStateSnapshot } from "@/sync/engine/snapshot";
+import { SyncWebSocketClient, type WsConnectionState } from "@/sync/ws-client";
+import { StatusBarController } from "@/ui/status-controller";
+import { SyncSettingsTab } from "@/ui/sync-settings-tab";
+import type { SyncStatusSnapshot } from "@/ui/types";
 
 const DEFAULT_SETTINGS: SyncSettings = {
   syncEnabled: true,

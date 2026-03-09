@@ -1,8 +1,8 @@
 import { TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
-import { applyPushResult } from "../src/sync/engine/push";
-import { SyncState } from "../src/sync/engine/state";
-import type { PendingLocalOperation, PushRequestOperation } from "../src/sync/engine/types";
+import { applyPushResult } from "@/sync/engine/push";
+import { SyncState } from "@/sync/engine/state";
+import type { PendingLocalOperation, PushRequestOperation } from "@/sync/engine/types";
 
 type FakeFile = TFile & { stat: { mtime: number }; data?: Uint8Array };
 

@@ -1,8 +1,8 @@
 import { TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
-import { buildPushOperation } from "../src/sync/engine/push";
-import { SyncState } from "../src/sync/engine/state";
-import type { PendingLocalOperation } from "../src/sync/engine/types";
+import { buildPushOperation } from "@/sync/engine/push";
+import { SyncState } from "@/sync/engine/state";
+import type { PendingLocalOperation } from "@/sync/engine/types";
 
 function makeFile(path: string, mtime: number) {
   const file = new TFile();
