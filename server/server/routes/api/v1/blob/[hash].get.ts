@@ -1,6 +1,6 @@
-import { createError, defineEventHandler, getRouterParam, setHeader } from "h3";
+import { createError, defineEventHandler, getRouterParam, sendStream, setHeader } from "h3";
 import { requireDevice } from "#app/utils/auth";
-import { hasBlob, readBlob } from "#app/utils/cas";
+import { hasBlob, statBlob, streamBlob } from "#app/utils/cas";
 
 export default defineEventHandler(async (event) => {
   await requireDevice(event);
@@ -13,8 +13,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "Blob not found" });
   }
 
-  const payload = await readBlob(hash);
+  const info = await statBlob(hash);
   setHeader(event, "content-type", "application/octet-stream");
-  setHeader(event, "content-length", payload.length);
-  return payload;
+  setHeader(event, "content-length", info.size);
+  return sendStream(event, streamBlob(hash));
 });

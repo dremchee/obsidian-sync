@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { resolveDataPaths } from "#app/utils/paths";
@@ -34,6 +35,14 @@ export async function putBlob(hash: string, payload: Buffer) {
 export async function readBlob(hash: string) {
   const p = blobPath(hash);
   return fs.readFile(p);
+}
+
+export async function statBlob(hash: string) {
+  return fs.stat(blobPath(hash));
+}
+
+export function streamBlob(hash: string) {
+  return createReadStream(blobPath(hash));
 }
 
 export async function listAllBlobs() {
