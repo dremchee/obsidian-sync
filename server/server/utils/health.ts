@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { getOrmDb } from "#app/utils/db";
 import { listAllBlobs } from "#app/utils/cas";
 import { resolveDataPaths } from "#app/utils/paths";
+import { collectMetricsSnapshot } from "#app/utils/metrics";
 
 export type HealthCheckStatus = "ok" | "warn" | "fail";
 export type HealthStatus = "ok" | "degraded" | "fail";
@@ -23,6 +24,12 @@ export type HealthSnapshot = {
     blobCount: number;
     backupCount: number;
     latestBackupAt: string | null;
+    blobUploadBytesTotal: number;
+    blobDownloadBytesTotal: number;
+    blobBatchRequestsTotal: number;
+    blobBatchItemsTotal: number;
+    blobBatchDeferredTotal: number;
+    blobBatchMissingTotal: number;
     processUptimeSeconds: number;
   };
   errors?: string[];
@@ -72,6 +79,12 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
   let blobCount = 0;
   let backupCount = 0;
   let latestBackupAt: string | null = null;
+  let blobUploadBytesTotal = 0;
+  let blobDownloadBytesTotal = 0;
+  let blobBatchRequestsTotal = 0;
+  let blobBatchItemsTotal = 0;
+  let blobBatchDeferredTotal = 0;
+  let blobBatchMissingTotal = 0;
 
   try {
     const db = getOrmDb();
@@ -110,6 +123,18 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     errors.push(error instanceof Error ? error.message : String(error));
   }
 
+  try {
+    const metrics = await collectMetricsSnapshot();
+    blobUploadBytesTotal = metrics.blobUploadBytesTotal;
+    blobDownloadBytesTotal = metrics.blobDownloadBytesTotal;
+    blobBatchRequestsTotal = metrics.blobBatchRequestsTotal;
+    blobBatchItemsTotal = metrics.blobBatchItemsTotal;
+    blobBatchDeferredTotal = metrics.blobBatchDeferredTotal;
+    blobBatchMissingTotal = metrics.blobBatchMissingTotal;
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+
   return {
     status: resolveHealthStatus([dbStatus, storageStatus, backupsStatus]),
     time: Date.now(),
@@ -125,6 +150,12 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
       blobCount,
       backupCount,
       latestBackupAt,
+      blobUploadBytesTotal,
+      blobDownloadBytesTotal,
+      blobBatchRequestsTotal,
+      blobBatchItemsTotal,
+      blobBatchDeferredTotal,
+      blobBatchMissingTotal,
       processUptimeSeconds: Math.floor(process.uptime())
     },
     errors: errors.length ? errors : undefined

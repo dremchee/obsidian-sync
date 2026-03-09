@@ -14,6 +14,27 @@ vi.mock("#app/utils/paths", () => ({
   })
 }));
 
+vi.mock("#app/utils/metrics", () => ({
+  collectMetricsSnapshot: vi.fn(async () => ({
+    vaults: 0,
+    devicesActive: 0,
+    devicesRevoked: 0,
+    filesLive: 0,
+    filesDeleted: 0,
+    fileRevisions: 0,
+    syncEvents: 0,
+    syncConflicts: 0,
+    blobCount: 0,
+    blobUploadBytesTotal: 0,
+    blobDownloadBytesTotal: 0,
+    blobBatchRequestsTotal: 0,
+    blobBatchItemsTotal: 0,
+    blobBatchDeferredTotal: 0,
+    blobBatchMissingTotal: 0,
+    processUptimeSeconds: 0
+  }))
+}));
+
 import { resolveHealthStatus } from "../server/utils/health";
 
 describe("health helpers", () => {
